@@ -54,3 +54,8 @@ textarea {
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* Keep the light Result Processor table hover style out of this dark workspace. */
+.image-maker-shell tr:hover td {
+  background: transparent;
+}
