@@ -164,7 +164,9 @@ export default function ImageMaker({ sourceData }) {
   const [currentPage, setCurrentPage] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [fileName, setFileName] = useState('Sample data loaded');
+  const [previewWidth, setPreviewWidth] = useState(1080);
   const cardRefs = useRef([]);
+  const previewHostRef = useRef(null);
 
   useEffect(() => {
     if (!sourceData?.headers?.length) return;
@@ -174,13 +176,23 @@ export default function ImageMaker({ sourceData }) {
     setFileName('Live ResultFlow output');
   }, [sourceData]);
 
+  useEffect(() => {
+    const node = previewHostRef.current;
+    if (!node) return undefined;
+    const updateWidth = () => setPreviewWidth(node.clientWidth);
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
   const visibleColumns = headers
     .map((name, index) => ({ name, index }))
     .filter((col) => !hiddenColumns.includes(col.index));
 
   const pages = useMemo(() => chunkRows(rows, Math.max(1, Number(style.rowsPerImage) || 1)), [rows, style.rowsPerImage]);
   const exportSize = sizeOptions[style.exportSize];
-  const previewScale = 1;
+  const previewScale = Math.min(1, Math.max(0.25, (previewWidth - 28) / exportSize.width));
   const accent = accentOptions[style.accent];
   const selectedHighlightColumns = style.highlightColumns
     ? visibleColumns.filter((_, index) => index === 0 || index === visibleColumns.length - 1).map((col) => col.index)
@@ -456,7 +468,7 @@ export default function ImageMaker({ sourceData }) {
           </div>
         </aside>
 
-        <section className="min-w-0 flex-1 space-y-4">
+        <section ref={previewHostRef} className="min-w-0 flex-1 space-y-4">
           <div className="control-panel">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -520,32 +532,31 @@ export default function ImageMaker({ sourceData }) {
                   <h3 className="text-sm font-bold uppercase tracking-[0.18em] text-slate-400">Page {index + 1}</h3>
                   <span className="text-sm text-slate-500">{exportSize.label}</span>
                 </div>
-                <div className="overflow-auto rounded-lg border border-white/10 bg-black/30 p-3">
+                <div className="overflow-hidden rounded-lg border border-white/10 bg-black/30 p-3">
                   <div
-                    className="origin-top-left"
                     style={{
-                      width: exportSize.width,
-                      height: exportSize.height,
-                      transform: `scale(${previewScale})`,
-                      transformOrigin: 'top left',
+                      width: exportSize.width * previewScale,
+                      height: exportSize.height * previewScale,
                     }}
                   >
-                    <ResultCard
-                      ref={(node) => { cardRefs.current[index] = node; }}
-                      brand={brand}
-                      brandOptions={brandOptions}
-                      headers={headers}
-                      rows={pageRows}
-                      pageIndex={index}
-                      rowOffset={index * Number(style.rowsPerImage)}
-                      totalPages={pages.length}
-                      visibleColumns={visibleColumns}
-                      selectedHighlightColumns={selectedHighlightColumns}
-                      columnFontSizes={columnFontSizes}
-                      styleConfig={style}
-                      exportSize={exportSize}
-                      accent={accent}
-                    />
+                    <div style={{width:exportSize.width,height:exportSize.height,transform:`scale(${previewScale})`,transformOrigin:'top left'}}>
+                      <ResultCard
+                        ref={(node) => { cardRefs.current[index] = node; }}
+                        brand={brand}
+                        brandOptions={brandOptions}
+                        headers={headers}
+                        rows={pageRows}
+                        pageIndex={index}
+                        rowOffset={index * Number(style.rowsPerImage)}
+                        totalPages={pages.length}
+                        visibleColumns={visibleColumns}
+                        selectedHighlightColumns={selectedHighlightColumns}
+                        columnFontSizes={columnFontSizes}
+                        styleConfig={style}
+                        exportSize={exportSize}
+                        accent={accent}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
