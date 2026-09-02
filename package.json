@@ -9,14 +9,19 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "latest",
+    "file-saver": "^2.0.5",
+    "html-to-image": "^1.11.13",
     "jspdf": "latest",
     "jspdf-autotable": "latest",
+    "jszip": "^3.10.1",
     "lucide-react": "latest",
-    "vite": "latest",
-    "xlsx": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "tailwindcss": "^4.3.3",
+    "vite": "latest",
+    "xlsx": "latest"
   },
   "devDependencies": {
     "vitest": "latest"

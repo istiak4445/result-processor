@@ -6,6 +6,8 @@ import autoTable from 'jspdf-autotable';
 import {AlertTriangle, ArrowRight, CheckCircle2, Cloud, Download, FileSpreadsheet, Link2, RefreshCw, ShieldCheck, Upload, XCircle} from 'lucide-react';
 import './styles.css';
 import './overrides.css';
+import './image-maker.css';
+import ImageMaker from './ImageMaker.jsx';
 
 const TYPES = {
   students:{label:'Students sheet', hint:'Roster / registration export', color:'violet'},
@@ -157,6 +159,7 @@ function App(){
  function clearManualRolls(){setManualRows([{roll:'',name:'',college:'',mark:'',added:false}]);setSources(s=>{const {manual,...rest}=s;return rest})}
  function toggleOutput(id){setOutputFields(fields=>fields.includes(id)?(fields.length>1?fields.filter(x=>x!==id):fields):[...fields,id])}
  function dataset(){return processed.results.map(r=>Object.fromEntries(OUTPUT_FIELDS.filter(([id])=>outputFields.includes(id)).map(([id,label])=>[label,r[id]??''])))}
+ const imageSource=useMemo(()=>{const data=dataset();return {headers:Object.keys(data[0]||{}),rows:data.map(row=>Object.values(row).map(value=>String(value??''))) }},[processed.results,outputFields]);
  function exportXlsx(){const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(dataset()),'Final Result');XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(processed.issues),'Validation Issues');XLSX.writeFile(wb,'processed-result.xlsx')}
  function exportCsv(){const csv=XLSX.utils.sheet_to_csv(XLSX.utils.json_to_sheet(dataset()));const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='processed-result.csv';a.click();URL.revokeObjectURL(a.href)}
  function exportPdf(){const doc=new jsPDF({orientation:'landscape'});doc.setFontSize(18);doc.text('Final Examination Result',14,16);doc.setFontSize(9);doc.text(`Generated ${new Date().toLocaleString()}`,14,22);autoTable(doc,{startY:27,head:[Object.keys(dataset()[0]||{})],body:dataset().map(Object.values),styles:{fontSize:8},headStyles:{fillColor:[41,38,74]}});doc.save('processed-result.pdf')}
@@ -184,7 +187,10 @@ function App(){
  {(tab!=='issues'||showIssueDetails||processed.issues.length===0)&&<Table tab={tab} data={tab==='results'?dataset():tab==='issues'?filteredIssues:processed.audit}/>} 
  <div className="field-options"><div><b>Final output fields</b><small>Choose what appears in preview and every export.</small></div>{OUTPUT_FIELDS.map(([id,label])=><label key={id}><input type="checkbox" checked={outputFields.includes(id)} onChange={()=>toggleOutput(id)}/><span>{label}</span></label>)}</div>
  <div className="export"><div><b>Ready when you are</b><small>Exports contain clean result fields only. Paid Amount and helpers are excluded.</small></div><button onClick={exportCsv} disabled={!processed.results.length}><Download size={16}/> CSV</button><button onClick={exportPdf} disabled={!processed.results.length}><Download size={16}/> PDF</button><button className="primary" onClick={exportXlsx} disabled={!processed.results.length}><Download size={16}/> Excel</button></div>
- </section></main><footer>ResultFlow · exact roll matching · transparent validation · source-safe processing</footer></>
+ </section>
+ <section className="image-studio-heading"><div><span>04</span><h2>Live result image studio</h2></div><p>{processed.results.length?`${processed.results.length} processed rows are synced automatically. Edit and export below.`:'Sample data is shown until a result is processed.'}</p></section>
+ <ImageMaker sourceData={imageSource}/>
+ </main><footer>ResultFlow · process, edit, design, and export in one workspace</footer></>
 }
 function Table({data}){const rows=data.slice(0,100), headers=Object.keys(rows[0]||{});if(!rows.length)return <div className="empty"><FileSpreadsheet size={27}/> No rows to preview yet.</div>;return <div className="table-wrap"><table><thead><tr>{headers.map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{rows.map((r,i)=><tr key={i}>{headers.map(h=>{const value=String(r[h]??'');return <td className={value.startsWith('✓')?'edited-cell':''} key={h}>{value}</td>})}</tr>)}</tbody></table>{data.length>100&&<p className="more">Showing 100 of {data.length} rows</p>}</div>}
 if(typeof document!=='undefined') createRoot(document.getElementById('root')).render(<App/>);
