@@ -618,11 +618,11 @@ const ResultCard = React.forwardRef(function ResultCard(
         className="relative flex h-full flex-col border border-white/16 bg-white/[0.075] shadow-2xl backdrop-blur"
         style={{ borderRadius: styleConfig.borderRadius, boxShadow: `0 28px 80px rgba(0,0,0,.44), 0 0 62px ${accent.glow}` }}
       >
-        <header className="shrink-0 px-12 text-center" style={{ height: headerBlockHeight, paddingTop: isLogoStrip ? 0 : isSquare ? 24 : 34 }}>
+        <div className="shrink-0 px-12 text-center" style={{ height: headerBlockHeight, paddingTop: isLogoStrip ? 0 : isSquare ? 24 : 34 }}>
           <TopBrand brand={brand} brandOptions={brandOptions} accent={accent} isSquare={isSquare} />
           <h2 className={`${isSquare ? 'text-[52px]' : 'text-[62px]'} font-black leading-none tracking-normal`} style={{ color: accent.primary }}>{brand.title}</h2>
           <p className={`${isSquare ? 'mt-3 text-2xl' : 'mt-4 text-3xl'} font-semibold text-slate-100`}>{brand.subtitle}</p>
-        </header>
+        </div>
 
         <div className="flex min-h-0 flex-1 items-start justify-center px-10" style={{ paddingBottom: tableShellPadding, height: tableAreaHeight + tableShellPadding }}>
           <table
@@ -735,7 +735,7 @@ const ResultCard = React.forwardRef(function ResultCard(
           </table>
         </div>
 
-        <footer className="shrink-0 px-12 text-center" style={{ height: footerBlockHeight, paddingTop: isSquare ? 12 : 18 }}>
+        <div className="shrink-0 px-12 text-center" style={{ height: footerBlockHeight, paddingTop: isSquare ? 12 : 18 }}>
           <div className="mx-auto h-px w-4/5" style={{ background: `linear-gradient(90deg, transparent, ${accent.primary}, transparent)` }} />
           <div className={`${isSquare ? 'mt-3 text-xl' : 'mt-4 text-2xl'} font-black`} style={{ color: accent.primary }}>{brand.footer}</div>
           <div className={`${isSquare ? 'mt-1 text-base' : 'mt-2 text-lg'} flex flex-wrap items-center justify-center gap-x-5 gap-y-1 font-semibold text-slate-200`}>
@@ -743,7 +743,7 @@ const ResultCard = React.forwardRef(function ResultCard(
             {brand.web && <span>{brand.web}</span>}
             {brand.note && <span>{brand.note}</span>}
           </div>
-        </footer>
+        </div>
       </div>
     </article>
   );
