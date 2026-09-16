@@ -99,14 +99,13 @@ export function makeMap(src){
 function sourceValue(record, source, field){const i=source?.mapping[field]; return i>=0 ? String(record?.row?.[i]??'').trim():''}
 export function processSources(sources){
   const s=makeMap(sources.students), w=makeMap(sources.web), m=makeMap(sources.mcq), c=makeMap(sources.cq), manual=makeMap(sources.manual);
-  const webReady=!!sources.web&&w.map.size>0;
   const label=(src,fallback)=>src?.fileName||fallback;
   const examRolls=new Set([...m.map.keys(),...c.map.keys(),...manual.map.keys()]);
   const results=[], audit=[];
   [...examRolls].forEach((roll,index)=>{
     const student=s.map.get(roll), web=w.map.get(roll), mcq=m.map.get(roll), cq=c.map.get(roll), manualRow=manual.map.get(roll);
     audit.push({roll,students:student?'Matched':'NOT FOUND',web:web?'Matched':'Not used',mcq:sources.mcq?(mcq?'Matched':'Missing'):'Not supplied',cq:sources.cq?(cq?'Matched':'Missing'):'Not supplied'});
-    if(!student&&!manualRow)return;
+    if(!student&&!web&&!manualRow)return;
     const mcqRaw=sourceValue(mcq,sources.mcq,'mark'), cqRaw=sourceValue(cq,sources.cq,'mark');
     const mv=Number(mcqRaw), cv=Number(cqRaw);
     const mcqOk=!!mcq && mcqRaw!=='' && Number.isFinite(mv), cqOk=!!cq && cqRaw!=='' && Number.isFinite(cv);
@@ -127,7 +126,7 @@ export function processSources(sources){
     ...[...m.duplicates].map(roll=>({type:'Duplicate roll',roll,detail:'Repeated in MCQ',source:label(sources.mcq,'MCQ')})),
     ...[...c.duplicates].map(roll=>({type:'Duplicate roll',roll,detail:'Repeated in CQ',source:label(sources.cq,'CQ')})),
     ...[...manual.duplicates].map(roll=>({type:'Duplicate manual roll',roll,detail:'Repeated in manual roll list'})),
-    ...[...examRolls].filter(roll=>!s.map.has(roll)).map(roll=>({type:'Not in Students',roll,detail:'Marks roll not found in Students sheet'})),
+    ...[...examRolls].filter(roll=>!s.map.has(roll)&&!w.map.has(roll)).map(roll=>({type:'Not in Students',roll,detail:'Marks roll not found in Students sheet or valid Web Roll'})),
     ...(sources.mcq&&(sources.manual||sources.cq)?results.filter(r=>r.mcq===null&&sourceValue(manual.map.get(r.roll),sources.manual,'mark')==='').map(r=>({type:'MCQ missing',roll:r.roll,detail:sources.manual?'Manual roll not found in MCQ':'Present in CQ only'})):[]),
     ...(sources.cq&&(sources.manual||sources.mcq)?results.filter(r=>r.cq===null&&sourceValue(manual.map.get(r.roll),sources.manual,'mark')==='').map(r=>({type:'CQ missing',roll:r.roll,detail:sources.manual?'Manual roll not found in CQ':'Present in MCQ only'})):[]),
     ...results.filter(r=>!r.name).map(r=>({type:'Name missing',roll:r.roll,detail:'Name blank in Students and Web'})),

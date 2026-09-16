@@ -43,7 +43,7 @@ describe('optional marks sources',()=>{
   const mcq=parseRows([['Roll Number','Score'],['123456','12'],['123457','15']],'mcq','mcq.xlsx');
   const result=processSources({students,mcq});
   expect(result.results.map(r=>r.roll)).toEqual(['00123456']);
-  expect(result.issues).toContainEqual({type:'Not in Students',roll:'00123457','Manual Mark':'','Manual Status':'',description:'Marks roll not found in Students sheet'});
+  expect(result.issues).toContainEqual({type:'Not in Students',roll:'00123457','Manual Mark':'','Manual Status':'',description:'Marks roll not found in Students sheet or valid Web Roll'});
  });
  it('uses optional manual marks only when no uploaded mark exists',()=>{
   const students=parseRows([['Student Name','Roll'],['Known','123456']],'students','students.xlsx');
@@ -64,6 +64,22 @@ describe('optional marks sources',()=>{
  });
 });
 describe('web source guard',()=>{
+ it('accepts an exam roll absent from Students when a valid Web Roll matches',()=>{
+  const students=parseRows([['Student Name','Roll'],['Other','123456']],'students','students.xlsx');
+  const web=parseRows([['Roll','WEB Roll*','Name','College'],['281001','28-28047-1','Web student','Web college']],'web','web.xlsx');
+  const mcq=parseRows([['Roll Number','Score'],['28280471','18']],'mcq','mcq.xlsx');
+  const result=processSources({students,web,mcq});
+  expect(result.results[0]).toMatchObject({roll:'28280471',name:'Web student',college:'Web college',total:18,rank:1});
+  expect(result.issues.some(i=>i.type==='Not in Students')).toBe(false);
+ });
+ it('does not accept an internal Roll when the Web Roll field is blank',()=>{
+  const students=parseRows([['Student Name','Roll']],'students','students.xlsx');
+  const web=parseRows([['Roll','WEB Roll*','Name'],['123456','','Blank web roll']],'web','web.xlsx');
+  const mcq=parseRows([['Roll Number','Score'],['123456','18']],'mcq','mcq.xlsx');
+  const result=processSources({students,web,mcq});
+  expect(result.results).toHaveLength(0);
+  expect(result.issues.some(i=>i.type==='Not in Students')).toBe(true);
+ });
  it('treats web data as optional enrichment when it has no usable rolls',()=>{
   const students=parseRows([['Student Name','Roll'],['A','123456'],['B','123457']],'students','students.xlsx');
   const web=parseRows([['WEB Roll*','Name'],['','A'],['','B']],'web','web.xlsx');
