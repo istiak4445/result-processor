@@ -327,6 +327,7 @@ export default function ImageMaker({ sourceData }) {
       .pdf-card { width: ${exportSize.width}px; height: ${exportSize.height}px; break-after: page; page-break-after: always; }
       .pdf-card:last-child { break-after: auto; page-break-after: auto; }
       .pdf-card article { transform: none !important; margin: 0 !important; }
+      .pdf-card, .pdf-card * { text-shadow: none !important; }
       .pdf-toolbar { padding: 16px; background: white; color: #222; font: 14px sans-serif; }
       .pdf-toolbar button { padding: 10px 16px; cursor: pointer; }
       @media print { .pdf-toolbar { display: none !important; } }
