@@ -43,7 +43,7 @@ describe('optional marks sources',()=>{
   const mcq=parseRows([['Roll Number','Score'],['123456','12'],['123457','15']],'mcq','mcq.xlsx');
   const result=processSources({students,mcq});
   expect(result.results.map(r=>r.roll)).toEqual(['00123456']);
-  expect(result.issues).toContainEqual({type:'Not in Students',roll:'00123457','Manual Mark':'','Manual Status':'',description:'Marks roll not found in Students sheet or valid Web Roll'});
+  expect(result.issues).toContainEqual({type:'Not in Students',roll:'00123457','Marks source':'MCQ','Manual Mark':'','Manual Status':'',description:'MCQ · mcq.xlsx · Row 3 · original 123457: No match in Students (Web sheet not loaded)'});
  });
  it('uses optional manual marks only when no uploaded mark exists',()=>{
   const students=parseRows([['Student Name','Roll'],['Known','123456']],'students','students.xlsx');

@@ -27,6 +27,7 @@ const OUTPUT_FIELDS=[
 const key = v => String(v ?? '').trim().toLowerCase().replace(/[\n_*]+/g,' ').replace(/\s+/g,' ');
 export function normalizeRoll(value){
   const original=String(value ?? '').trim();
+  if(!original)return {original,normalized:'',valid:false,reason:'Roll missing'};
   const cleaned=original.replace(/-/g,'').trim();
   if(!/^\d+$/.test(cleaned)) return {original,normalized:'',valid:false,reason:'Contains letters or invalid symbols'};
   if(cleaned.length===6) return {original,normalized:`00${cleaned}`,valid:true,reason:''};
@@ -58,8 +59,9 @@ function detectColumn(headers, field, type){
 }
 export function parseRows(matrix, type, fileName){
   const headerIndex=detectHeader(matrix); const headers=(matrix[headerIndex]||[]).map(v=>String(v??'').trim());
-  const rows=matrix.slice(headerIndex+1).filter(r=>r.some(v=>String(v??'').trim()!==''));
-  return {type,fileName,headerIndex,headers,rows,mapping:{roll:detectColumn(headers,'roll',type),name:detectColumn(headers,'name',type),college:detectColumn(headers,'college',type),mark:detectColumn(headers,'mark',type)}};
+  const entries=matrix.slice(headerIndex+1).map((row,i)=>({row,rowNumber:headerIndex+i+2})).filter(({row})=>row.some(v=>String(v??'').trim()!==''));
+  const rows=entries.map(x=>x.row),rowNumbers=entries.map(x=>x.rowNumber);
+  return {type,fileName,headerIndex,headers,rows,rowNumbers,mapping:{roll:detectColumn(headers,'roll',type),name:detectColumn(headers,'name',type),college:detectColumn(headers,'college',type),mark:detectColumn(headers,'mark',type)}};
 }
 async function readFile(file,type){
   const bytes=await file.arrayBuffer(); const book=XLSX.read(bytes,{type:'array',raw:false});
@@ -91,7 +93,7 @@ function defaultWebTab(book,matrices){
 export function makeMap(src){
   const map=new Map(), duplicates=new Set(), invalid=[];
   if(!src) return {map,duplicates,invalid,records:[]};
-  const records=src.rows.map((row,i)=>{const n=normalizeRoll(row[src.mapping.roll]); return {row,rowNumber:i+src.headerIndex+2,...n}})
+  const records=src.rows.map((row,i)=>{const n=normalizeRoll(row[src.mapping.roll]); return {row,rowNumber:src.rowNumbers?.[i]??i+src.headerIndex+2,...n}})
     .filter(r=>!(src.type==='web'&&r.original===''));
   records.forEach(r=>{if(!r.valid){invalid.push(r);return} if(map.has(r.normalized)) duplicates.add(r.normalized); else map.set(r.normalized,r)});
   return {map,duplicates,invalid,records};
@@ -118,20 +120,19 @@ export function processSources(sources){
   const sorted=[...results].sort((a,b)=>(b.total??-Infinity)-(a.total??-Infinity)||a.roll.localeCompare(b.roll));
   let rank=0,last=null; sorted.forEach(r=>{if(r.total===null)return; if(r.total!==last){rank++;last=r.total}r.rank=rank});
   const issueRows=[
-    ...m.invalid.map(r=>({type:'Invalid MCQ roll',roll:r.original,detail:`Row ${r.rowNumber}: ${r.reason.replace('Expected ','').replace('; found ','; got ')}`})),
-    ...c.invalid.map(r=>({type:'Invalid CQ roll',roll:r.original,detail:`Row ${r.rowNumber}: ${r.reason.replace('Expected ','').replace('; found ','; got ')}`})),
+    ...[['MCQ',m,sources.mcq],['CQ',c,sources.cq]].flatMap(([kind,indexed,src])=>indexed.invalid.map(r=>({type:r.original?`Invalid ${kind} roll`:`${kind} roll missing`,roll:r.original,detail:`${kind} · ${src.fileName} · Row ${r.rowNumber}${sourceValue(r,src,'name')?` · ${sourceValue(r,src,'name')}`:''}: ${src.mapping.roll<0?'Roll column not selected':r.reason}`}))),
     ...manual.invalid.map(r=>({type:'Invalid manual roll',roll:r.original,detail:`Manual row ${r.rowNumber}: ${r.reason.replace('Expected ','').replace('; found ','; got ')}`})),
     ...[...s.duplicates].filter(roll=>examRolls.has(roll)).map(roll=>({type:'Duplicate roll',roll,detail:'Repeated exam roll in Students',source:label(sources.students,'Students')})),
     ...[...w.duplicates].filter(roll=>examRolls.has(roll)).map(roll=>({type:'Duplicate roll',roll,detail:'Repeated exam roll in Web Roll',source:label(sources.web,'Web Roll')})),
     ...[...m.duplicates].map(roll=>({type:'Duplicate roll',roll,detail:'Repeated in MCQ',source:label(sources.mcq,'MCQ')})),
     ...[...c.duplicates].map(roll=>({type:'Duplicate roll',roll,detail:'Repeated in CQ',source:label(sources.cq,'CQ')})),
     ...[...manual.duplicates].map(roll=>({type:'Duplicate manual roll',roll,detail:'Repeated in manual roll list'})),
-    ...[...examRolls].filter(roll=>!s.map.has(roll)&&!w.map.has(roll)).map(roll=>({type:'Not in Students',roll,detail:'Marks roll not found in Students sheet or valid Web Roll'})),
+    ...[...examRolls].filter(roll=>!s.map.has(roll)&&!w.map.has(roll)).map(roll=>({type:'Not in Students',roll,detail:`${[['MCQ',m,sources.mcq],['CQ',c,sources.cq]].flatMap(([kind,indexed,src])=>indexed.records.filter(r=>r.valid&&r.normalized===roll).map(r=>`${kind} · ${src.fileName} · Row ${r.rowNumber} · original ${r.original}`)).join('; ')||'Manual entry'}: No match in Students${sources.web?' or valid Web Roll':' (Web sheet not loaded)'}`})),
     ...(sources.mcq&&(sources.manual||sources.cq)?results.filter(r=>r.mcq===null&&sourceValue(manual.map.get(r.roll),sources.manual,'mark')==='').map(r=>({type:'MCQ missing',roll:r.roll,detail:sources.manual?'Manual roll not found in MCQ':'Present in CQ only'})):[]),
     ...(sources.cq&&(sources.manual||sources.mcq)?results.filter(r=>r.cq===null&&sourceValue(manual.map.get(r.roll),sources.manual,'mark')==='').map(r=>({type:'CQ missing',roll:r.roll,detail:sources.manual?'Manual roll not found in CQ':'Present in MCQ only'})):[]),
     ...results.filter(r=>!r.name).map(r=>({type:'Name missing',roll:r.roll,detail:'Name blank in Students and Web'})),
   ];
-  return {results:sorted,audit,issues:issueRows.map(({type,roll,detail})=>({type,roll,'Manual Mark':sourceValue(manual.map.get(roll),sources.manual,'mark'),'Manual Status':manual.map.has(roll)?'✓ Edited':'',description:detail}))};
+  return {results:sorted,audit,issues:issueRows.map(({type,roll,detail})=>({type,roll,'Marks source':type.includes('MCQ')?'MCQ':type.includes('CQ')?'CQ':[['MCQ',m],['CQ',c]].filter(([,indexed])=>indexed.map.has(roll)).map(([kind])=>kind).join(' + ')||(manual.map.has(roll)?'Manual':'—'),'Manual Mark':sourceValue(manual.map.get(roll),sources.manual,'mark'),'Manual Status':manual.map.has(roll)?'✓ Edited':'',description:detail}))};
 }
 function SourceCard({type,source,onFile}){const t=TYPES[type];return <label className={`source-card ${source?'ready':''}`}>
   <input type="file" accept=".xlsx,.xls,.csv" onChange={e=>e.target.files[0]&&onFile(e.target.files[0],type)}/>
