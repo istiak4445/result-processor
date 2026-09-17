@@ -301,6 +301,66 @@ export default function ImageMaker({ sourceData }) {
     }
   };
 
+  // Native browser PDF preserves selectable Unicode text and the actual card layout.
+  const exportSearchablePdf = async () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      window.alert('Allow pop-ups for this site to export the searchable PDF.');
+      return;
+    }
+    const doc = printWindow.document;
+    doc.open();
+    doc.write('<!doctype html><html><head><meta charset="utf-8"></head><body></body></html>');
+    doc.close();
+    doc.title = `${brand.title || 'Final Result'} - Searchable PDF`;
+    const base = doc.createElement('base');
+    base.href = document.baseURI;
+    doc.head.appendChild(base);
+    document.querySelectorAll('style, link[rel="stylesheet"]').forEach((node) => {
+      doc.head.appendChild(node.cloneNode(true));
+    });
+    const printStyle = doc.createElement('style');
+    printStyle.textContent = `
+      @page { size: ${exportSize.width}px ${exportSize.height}px; margin: 0; }
+      html, body { margin: 0 !important; padding: 0 !important; background: #020617; }
+      * { print-color-adjust: exact !important; -webkit-print-color-adjust: exact !important; }
+      .pdf-card { width: ${exportSize.width}px; height: ${exportSize.height}px; break-after: page; page-break-after: always; }
+      .pdf-card:last-child { break-after: auto; page-break-after: auto; }
+      .pdf-card article { transform: none !important; margin: 0 !important; }
+      .pdf-toolbar { padding: 16px; background: white; color: #222; font: 14px sans-serif; }
+      .pdf-toolbar button { padding: 10px 16px; cursor: pointer; }
+      @media print { .pdf-toolbar { display: none !important; } }
+    `;
+    doc.head.appendChild(printStyle);
+    const toolbar = doc.createElement('div');
+    toolbar.className = 'pdf-toolbar';
+    toolbar.textContent = 'Choose Save as PDF. Use all pages, zero margins, and enable background graphics. ';
+    const printButton = doc.createElement('button');
+    printButton.textContent = 'Save searchable PDF';
+    printButton.onclick = () => printWindow.print();
+    toolbar.appendChild(printButton);
+    doc.body.appendChild(toolbar);
+    const shell = doc.createElement('div');
+    shell.className = 'image-maker-shell';
+    cardRefs.current.slice(0, pages.length).forEach((node) => {
+      if (!node) return;
+      const page = doc.createElement('div');
+      page.className = 'pdf-card';
+      page.appendChild(node.cloneNode(true));
+      shell.appendChild(page);
+    });
+    doc.body.appendChild(shell);
+    await Promise.all([...doc.querySelectorAll('link[rel="stylesheet"]')].map((link) => new Promise((resolve) => {
+      if (link.sheet) return resolve();
+      link.onload = resolve;
+      link.onerror = resolve;
+      setTimeout(resolve, 5000);
+    })));
+    await doc.fonts.ready;
+    await Promise.all([...doc.images].map((img) => img.decode().catch(() => {})));
+    if (!printWindow.closed) { printWindow.focus(); printWindow.print(); }
+  };
+
   const downloadZip = async () => {
     setExporting(true);
     try {
@@ -457,6 +517,10 @@ export default function ImageMaker({ sourceData }) {
           </EditorSection>
 
           <div className="control-panel space-y-3">
+            <button className="primary-button w-full" onClick={exportSearchablePdf} disabled={exporting || !rows.length}>
+              <Download size={17} /> Export Final Searchable PDF
+            </button>
+            <p className="text-xs text-slate-400">Same final card layout, searchable names and rolls. Choose “Save as PDF” and enable background graphics.</p>
             <button className="primary-button w-full" onClick={downloadCurrent} disabled={exporting}>
               {exporting ? <Loader2 className="animate-spin" size={17} /> : <Download size={17} />}
               Download Current Image
