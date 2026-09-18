@@ -1,8 +1,9 @@
 export function safeExportName(value) {
   return String(value || '').replace(/\.(xlsx?|csv|pdf|png|zip)$/i,'').replace(/[\\/:*?"<>|\u0000-\u001f]/g,'-').replace(/\s+/g,' ').replace(/^[.\s-]+|[.\s-]+$/g,'').slice(0,150) || 'Exam Result';
 }
-export function automaticExportName(fileName) {
-  if(!fileName)return 'Exam Result';
+export function automaticExportName(fileName, {mcq=false,cq=false}={}) {
+  const suffix=mcq&&!cq?'MCQ Result':cq&&!mcq?'CQ Result':'Result';
+  if(!fileName)return `Exam ${suffix}`;
   const months={jan:'Jan',feb:'Feb',mar:'Mar',apr:'Apr',may:'May',jun:'Jun',jul:'Jul',aug:'Aug',sep:'Sep',sept:'Sept',oct:'Oct',nov:'Nov',dec:'Dec'};
   let name=String(fileName).replace(/\.(xlsx?|csv)$/i,'');
   name=name.replace(/[_()\[\]]+/g,' ').replace(/\b(HSC|SSC)(\d{2,4})\b/gi,'$1 $2');
@@ -11,5 +12,5 @@ export function automaticExportName(fileName) {
   name=name.replace(/^(HSC|SSC)\s+(\d{2,4})\s+(?!-)(.+)$/i,(_,course,batch,rest)=>`${course.toUpperCase()} ${batch} - ${rest}`);
   // Keep useful title/date words without exporting a long vendor-generated filename.
   if(name.length>80){const date=name.match(/\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)(?:\s+\d{4})?\b/i)?.[0]||'';const head=name.replace(date,'').slice(0,date?60:75).replace(/\s+\S*$/,'').replace(/[\s-]+$/,'');name=date?`${head} - ${date}`:head;}
-  return `${safeExportName(name || 'Exam')} - Result`;
+  return `${safeExportName(name || 'Exam')} - ${suffix}`;
 }

@@ -147,7 +147,7 @@ function App(){
  const [savedSheets,setSavedSheets]=useState(initialLibrary); const [activeSavedId,setActiveSavedId]=useState(initialLibrary[0]?.id||'');
  const [sources,setSources]=useState({}); const [link,setLink]=useState(''); const [sheetNames,setSheetNames]=useState([]); const [selectedSheet,setSelectedSheet]=useState(''); const [linkedMatrices,setLinkedMatrices]=useState({}); const [manualRows,setManualRows]=useState([{roll:'',name:'',college:'',mark:'',added:false}]); const [outputFields,setOutputFields]=useState(()=>OUTPUT_FIELDS.map(([id])=>id)); const [busy,setBusy]=useState(''); const [tab,setTab]=useState('results'); const [workspaceTab,setWorkspaceTab]=useState('processor'); const [showIssueDetails,setShowIssueDetails]=useState(false); const [issueFilter,setIssueFilter]=useState(''); const [issueSearch,setIssueSearch]=useState(''); const [error,setError]=useState('');
  const processed=useMemo(()=>processSources(sources),[sources]); const complete=!!sources.students&&!!(sources.mcq||sources.cq);
- const autoExportName=automaticExportName(sources.mcq?.fileName||sources.cq?.fileName);
+ const autoExportName=automaticExportName(sources.mcq?.fileName||sources.cq?.fileName,{mcq:!!sources.mcq,cq:!!sources.cq});
  const exportBaseName=customExportName.trim()?safeExportName(customExportName):autoExportName;
  async function onFile(file,type){try{setBusy(type);setError('');const src=await readFile(file,type);setSources(s=>({...s,[type]:src}));}catch(e){setError(e.message)}finally{setBusy('')}}
  const [storageStatus,setStorageStatus]=useState('Connecting permanent storage…');
