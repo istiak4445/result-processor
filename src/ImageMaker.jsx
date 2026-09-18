@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import * as htmlToImage from 'html-to-image';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
+import { downloadCardPdf } from './directPdf';
 import {
   AlignCenter,
   AlignLeft,
@@ -150,7 +151,7 @@ function isNumericValue(value) {
   return /^[\d\s.,:/+-]+$/.test(String(value ?? '').trim());
 }
 
-export default function ImageMaker({ sourceData }) {
+export default function ImageMaker({ sourceData, exportBaseName='Exam Result', customExportName='', onExportNameChange }) {
   const [rawRows, setRawRows] = useState([sampleHeaders, ...sampleRows]);
   const [useFirstRowHeader, setUseFirstRowHeader] = useState(true);
   const initial = normalizeSheet([sampleHeaders, ...sampleRows], true);
@@ -295,91 +296,21 @@ export default function ImageMaker({ sourceData }) {
     setExporting(true);
     try {
       const dataUrl = await exportNode(node);
-      saveAs(dataUrl, `chemshifu-result-page-${currentPage + 1}.png`);
+      saveAs(dataUrl, `${exportBaseName} - Page ${currentPage + 1}.png`);
     } finally {
       setExporting(false);
     }
   };
 
-  // Native browser PDF preserves selectable Unicode text and the actual card layout.
   const exportSearchablePdf = async () => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      window.alert('Allow pop-ups for this site to export the searchable PDF.');
-      return;
+    setExporting(true);
+    try {
+      await downloadCardPdf(cardRefs.current.slice(0, pages.length), exportSize, exportBaseName);
+    } catch (error) {
+      window.alert(error.message || 'Could not download PDF. Please try again.');
+    } finally {
+      setExporting(false);
     }
-    const doc = printWindow.document;
-    doc.open();
-    doc.write('<!doctype html><html><head><meta charset="utf-8"></head><body></body></html>');
-    doc.close();
-    doc.title = `${brand.title || 'Final Result'} - Searchable PDF`;
-    const base = doc.createElement('base');
-    base.href = document.baseURI;
-    doc.head.appendChild(base);
-    document.querySelectorAll('style, link[rel="stylesheet"]').forEach((node) => {
-      doc.head.appendChild(node.cloneNode(true));
-    });
-    const printStyle = doc.createElement('style');
-    printStyle.textContent = `
-      @page { size: ${exportSize.width}px ${exportSize.height}px; margin: 0; }
-      html, body { margin: 0 !important; padding: 0 !important; background: #020617; }
-      * { print-color-adjust: exact !important; -webkit-print-color-adjust: exact !important; }
-      .pdf-card { width: ${exportSize.width}px; height: ${exportSize.height}px; break-after: page; page-break-after: always; }
-      .pdf-card:last-child { break-after: auto; page-break-after: auto; }
-      .pdf-card article { transform: none !important; margin: 0 !important; }
-      .pdf-card, .pdf-card * { text-shadow: none !important; }
-      .pdf-card * { box-shadow: none !important; filter: none !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background-image: none !important; opacity: 1 !important; }
-      .pdf-card article { background: #08111f !important; }
-      .pdf-toolbar { padding: 16px; background: white; color: #222; font: 14px sans-serif; }
-      .pdf-toolbar button { padding: 10px 16px; cursor: pointer; }
-      @media print { .pdf-toolbar { display: none !important; } }
-    `;
-    doc.head.appendChild(printStyle);
-    const toolbar = doc.createElement('div');
-    toolbar.className = 'pdf-toolbar';
-    toolbar.textContent = 'Lightweight searchable PDF: solid colours, no heavy effects. Choose Save as PDF, zero margins, and enable background graphics. ';
-    const printButton = doc.createElement('button');
-    printButton.textContent = 'Save searchable PDF';
-    printButton.onclick = () => printWindow.print();
-    toolbar.appendChild(printButton);
-    doc.body.appendChild(toolbar);
-    const shell = doc.createElement('div');
-    shell.className = 'image-maker-shell';
-    cardRefs.current.slice(0, pages.length).forEach((node) => {
-      if (!node) return;
-      const page = doc.createElement('div');
-      page.className = 'pdf-card';
-      const clone = node.cloneNode(true);
-      // Flatten CSS alpha colours before printing: avoid thousands of PDF soft masks.
-      const originalElements = [node, ...node.querySelectorAll('*')];
-      const clonedElements = [clone, ...clone.querySelectorAll('*')];
-      const solidColour = (value) => {
-        const parts = value.match(/^rgba?\(([^)]+)\)$/)?.[1].split(',').map(Number);
-        if (!parts || parts.length < 3) return value;
-        const alpha = parts[3] ?? 1;
-        if (alpha === 0) return 'transparent';
-        return `rgb(${parts.slice(0, 3).map((channel, i) => Math.round(channel * alpha + [8, 17, 31][i] * (1 - alpha))).join(',')})`;
-      };
-      originalElements.forEach((element, i) => {
-        const computed = getComputedStyle(element);
-        const target = clonedElements[i];
-        for (const property of ['background-color', 'color', 'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color']) {
-          target.style.setProperty(property, solidColour(computed.getPropertyValue(property)), 'important');
-        }
-      });
-      page.appendChild(clone);
-      shell.appendChild(page);
-    });
-    doc.body.appendChild(shell);
-    await Promise.all([...doc.querySelectorAll('link[rel="stylesheet"]')].map((link) => new Promise((resolve) => {
-      if (link.sheet) return resolve();
-      link.onload = resolve;
-      link.onerror = resolve;
-      setTimeout(resolve, 5000);
-    })));
-    await doc.fonts.ready;
-    await Promise.all([...doc.images].map((img) => img.decode().catch(() => {})));
-    if (!printWindow.closed) { printWindow.focus(); printWindow.print(); }
   };
 
   const downloadZip = async () => {
@@ -388,10 +319,10 @@ export default function ImageMaker({ sourceData }) {
       const zip = new JSZip();
       for (let i = 0; i < pages.length; i += 1) {
         const dataUrl = await exportNode(cardRefs.current[i]);
-        zip.file(`chemshifu-result-page-${i + 1}.png`, dataUrl.split(',')[1], { base64: true });
+        zip.file(`${exportBaseName} - Page ${i + 1}.png`, dataUrl.split(',')[1], { base64: true });
       }
       const blob = await zip.generateAsync({ type: 'blob' });
-      saveAs(blob, 'chemshifu-result-images.zip');
+      saveAs(blob, `${exportBaseName} - Images.zip`);
     } finally {
       setExporting(false);
     }
@@ -541,7 +472,9 @@ export default function ImageMaker({ sourceData }) {
             <button className="primary-button w-full" onClick={exportSearchablePdf} disabled={exporting || !rows.length}>
               <Download size={17} /> Export Final Searchable PDF
             </button>
-            <p className="text-xs text-slate-400">Lightweight final layout with solid colours and searchable text. Heavy effects are excluded. Choose “Save as PDF” and enable background graphics.</p>
+            <p className="text-xs text-slate-400">Direct PDF download with solid colours and searchable Latin text. No print dialog. PDF uses a standard font; image exports keep the original design.</p>
+            <TextInput label="Export filename · automatic unless edited" value={customExportName} onChange={onExportNameChange} placeholder={exportBaseName}/>
+            <p className="text-xs text-slate-400">{exportBaseName}</p>
             <button className="primary-button w-full" onClick={downloadCurrent} disabled={exporting}>
               {exporting ? <Loader2 className="animate-spin" size={17} /> : <Download size={17} />}
               Download Current Image
@@ -874,11 +807,11 @@ function EditorSection({ title, icon, children }) {
   );
 }
 
-function TextInput({ label, value, onChange, type = 'text' }) {
+function TextInput({ label, value, onChange, type = 'text', placeholder }) {
   return (
     <label className="block space-y-1.5">
       <span className="control-label">{label}</span>
-      <input className="control-input" type={type} value={value} onChange={(event) => onChange(event.target.value)} />
+      <input className="control-input" type={type} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
     </label>
   );
 }
