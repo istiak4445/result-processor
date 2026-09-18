@@ -328,6 +328,8 @@ export default function ImageMaker({ sourceData }) {
       .pdf-card:last-child { break-after: auto; page-break-after: auto; }
       .pdf-card article { transform: none !important; margin: 0 !important; }
       .pdf-card, .pdf-card * { text-shadow: none !important; }
+      .pdf-card * { box-shadow: none !important; filter: none !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background-image: none !important; opacity: 1 !important; }
+      .pdf-card article { background: #08111f !important; }
       .pdf-toolbar { padding: 16px; background: white; color: #222; font: 14px sans-serif; }
       .pdf-toolbar button { padding: 10px 16px; cursor: pointer; }
       @media print { .pdf-toolbar { display: none !important; } }
@@ -335,7 +337,7 @@ export default function ImageMaker({ sourceData }) {
     doc.head.appendChild(printStyle);
     const toolbar = doc.createElement('div');
     toolbar.className = 'pdf-toolbar';
-    toolbar.textContent = 'Choose Save as PDF. Use all pages, zero margins, and enable background graphics. ';
+    toolbar.textContent = 'Lightweight searchable PDF: solid colours, no heavy effects. Choose Save as PDF, zero margins, and enable background graphics. ';
     const printButton = doc.createElement('button');
     printButton.textContent = 'Save searchable PDF';
     printButton.onclick = () => printWindow.print();
@@ -347,7 +349,25 @@ export default function ImageMaker({ sourceData }) {
       if (!node) return;
       const page = doc.createElement('div');
       page.className = 'pdf-card';
-      page.appendChild(node.cloneNode(true));
+      const clone = node.cloneNode(true);
+      // Flatten CSS alpha colours before printing: avoid thousands of PDF soft masks.
+      const originalElements = [node, ...node.querySelectorAll('*')];
+      const clonedElements = [clone, ...clone.querySelectorAll('*')];
+      const solidColour = (value) => {
+        const parts = value.match(/^rgba?\(([^)]+)\)$/)?.[1].split(',').map(Number);
+        if (!parts || parts.length < 3) return value;
+        const alpha = parts[3] ?? 1;
+        if (alpha === 0) return 'transparent';
+        return `rgb(${parts.slice(0, 3).map((channel, i) => Math.round(channel * alpha + [8, 17, 31][i] * (1 - alpha))).join(',')})`;
+      };
+      originalElements.forEach((element, i) => {
+        const computed = getComputedStyle(element);
+        const target = clonedElements[i];
+        for (const property of ['background-color', 'color', 'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color']) {
+          target.style.setProperty(property, solidColour(computed.getPropertyValue(property)), 'important');
+        }
+      });
+      page.appendChild(clone);
       shell.appendChild(page);
     });
     doc.body.appendChild(shell);
@@ -521,7 +541,7 @@ export default function ImageMaker({ sourceData }) {
             <button className="primary-button w-full" onClick={exportSearchablePdf} disabled={exporting || !rows.length}>
               <Download size={17} /> Export Final Searchable PDF
             </button>
-            <p className="text-xs text-slate-400">Same final card layout, searchable names and rolls. Choose “Save as PDF” and enable background graphics.</p>
+            <p className="text-xs text-slate-400">Lightweight final layout with solid colours and searchable text. Heavy effects are excluded. Choose “Save as PDF” and enable background graphics.</p>
             <button className="primary-button w-full" onClick={downloadCurrent} disabled={exporting}>
               {exporting ? <Loader2 className="animate-spin" size={17} /> : <Download size={17} />}
               Download Current Image
