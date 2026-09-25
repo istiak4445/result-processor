@@ -305,7 +305,7 @@ export default function ImageMaker({ sourceData, exportBaseName='Exam Result', c
   const exportSearchablePdf = async () => {
     setExporting(true);
     try {
-      await downloadCardPdf(cardRefs.current.slice(0, pages.length), exportSize, exportBaseName);
+      await downloadCardPdf(cardRefs.current.slice(0, pages.length), exportSize, exportBaseName, { brand });
     } catch (error) {
       window.alert(error.message || 'Could not download PDF. Please try again.');
     } finally {
@@ -472,7 +472,7 @@ export default function ImageMaker({ sourceData, exportBaseName='Exam Result', c
             <button className="primary-button w-full" onClick={exportSearchablePdf} disabled={exporting || !rows.length}>
               <Download size={17} /> Export Final Searchable PDF
             </button>
-            <p className="text-xs text-slate-400">Direct PDF download with solid colours and searchable Latin text. No print dialog. PDF uses a standard font; image exports keep the original design.</p>
+            <p className="text-xs text-slate-400">Clean lightweight vector PDF with embedded Kalpurush font and searchable Bangla/English text. The PDF layout is optimized separately from image exports.</p>
             <TextInput label="Export filename · automatic unless edited" value={customExportName} onChange={onExportNameChange} placeholder={exportBaseName}/>
             <p className="text-xs text-slate-400">{exportBaseName}</p>
             <button className="primary-button w-full" onClick={downloadCurrent} disabled={exporting}>
