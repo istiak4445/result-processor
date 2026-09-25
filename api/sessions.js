@@ -5,7 +5,8 @@ function cleanSession(value){
   const id=String(value.id||'');if(!/^[\w-]{8,80}$/.test(id))throw new Error('Invalid id');
   const payload=value.payload;if(!payload||typeof payload!=='object'||typeof payload.sources!=='object')throw new Error('Invalid payload');
   const createdAt=String(value.createdAt||new Date().toISOString()),updatedAt=new Date().toISOString();
-  const sourceFiles=Object.fromEntries(Object.entries(payload.sources).map(([type,source])=>[type,String(source?.fileName||'').slice(0,220)]));
+  const sourceFiles=Object.fromEntries(Object.entries(payload.sources).filter(([type])=>type!=='cqFiles').map(([type,source])=>[type,String(source?.fileName||'').slice(0,220)]));
+  if(payload.sources.cqFiles?.length)sourceFiles.cq=payload.sources.cqFiles.map(file=>file.fileName).join(', ').slice(0,220);
   return {id,title:String(value.title||'Saved result session').slice(0,180),createdAt,updatedAt,expiresAt:new Date(Date.now()+TTL*1000).toISOString(),sourceFiles,payload};
 }
 export default async function handler(req,res){

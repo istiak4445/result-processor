@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {makeMap,normalizeRoll,parseRows,processSources,resolveCqRows,textSimilarity} from './main.jsx';
+import {combineCqSources,makeMap,normalizeRoll,parseRows,processSources,resolveCqRows,textSimilarity} from './main.jsx';
 describe('normalizeRoll',()=>{
  it('normalizes six digit rolls',()=>expect(normalizeRoll('123456').normalized).toBe('00123456'));
  it('removes hyphens and preserves eight digits',()=>expect(normalizeRoll('28-28287-1').normalized).toBe('28282871'));
@@ -89,6 +89,14 @@ describe('web source guard',()=>{
  });
 });
 describe('CQ recovery',()=>{
+ it('combines CQ files with different column orders and headers',()=>{
+  const first=parseRows([['Student Name','CQ','Roll','College'],['A','21','123456','X']],'cq','evaluator-a.xlsx');
+  const second=parseRows([['Institution','Marks','Candidate Roll','Name'],['Y','22','123457','B']],'cq','evaluator-b.csv');
+  second.mapping.roll=2;
+  const combined=combineCqSources([first,second]);
+  expect(combined.rows).toEqual([['123456','A','X','21'],['123457','B','Y','22']]);
+  expect(makeMap(combined).records.map(record=>record.sourceFile)).toEqual(['evaluator-a.xlsx','evaluator-b.csv']);
+ });
  it('recovers a one-digit CQ roll only with strong name, college and unique MCQ evidence',()=>{
   const students=parseRows([['Student Name','Roll'],['Ariyan Rahman','123456']],'students','students.xlsx');
   const web=parseRows([['WEB Roll*','Name','College'],['123456','Ariyan Rahman','Notre Dame College']],'web','web.xlsx');
