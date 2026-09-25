@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {makeMap,normalizeRoll,parseRows,processSources} from './main.jsx';
+import {makeMap,normalizeRoll,parseRows,processSources,resolveCqRows,textSimilarity} from './main.jsx';
 describe('normalizeRoll',()=>{
  it('normalizes six digit rolls',()=>expect(normalizeRoll('123456').normalized).toBe('00123456'));
  it('removes hyphens and preserves eight digits',()=>expect(normalizeRoll('28-28287-1').normalized).toBe('28282871'));
@@ -86,5 +86,38 @@ describe('web source guard',()=>{
   const result=processSources({students,web});
   expect(result.issues.filter(i=>i.type==='Not in Web Roll')).toHaveLength(0);
   expect(result.issues.filter(i=>i.type==='Web Roll source unusable')).toHaveLength(0);
+ });
+});
+describe('CQ recovery',()=>{
+ it('recovers a one-digit CQ roll only with strong name, college and unique MCQ evidence',()=>{
+  const students=parseRows([['Student Name','Roll'],['Ariyan Rahman','123456']],'students','students.xlsx');
+  const web=parseRows([['WEB Roll*','Name','College'],['123456','Ariyan Rahman','Notre Dame College']],'web','web.xlsx');
+  const mcq=parseRows([['Roll Number','Score'],['123456','15']],'mcq','mcq.xlsx');
+  const cq=parseRows([['Roll','Student Name','College','Marks'],['123459','Ariyan Rahmn','NDC','25']],'cq','cq.xlsx');
+  const result=processSources({students,web,mcq,cq});
+  expect(result.results[0]).toMatchObject({roll:'00123456',mcq:15,cq:25,total:40});
+  expect(result.cqRecovery[0]).toMatchObject({Status:'Auto-recovered','Resolved Roll':'00123456'});
+  expect(result.issues.some(issue=>String(issue.type).includes('CQ'))).toBe(false);
+ });
+ it('never adds CQ marks when the resolved student has no MCQ row',()=>{
+  const students=parseRows([['Student Name','Roll'],['Ariyan Rahman','123456']],'students','students.xlsx');
+  const web=parseRows([['WEB Roll*','Name','College'],['123456','Ariyan Rahman','Notre Dame College']],'web','web.xlsx');
+  const cq=parseRows([['Roll','Student Name','College','Marks'],['123456','Ariyan Rahman','Notre Dame College','25']],'cq','cq.xlsx');
+  const result=processSources({students,web,cq});
+  expect(result.results).toHaveLength(0);
+  expect(result.cqRecovery[0].Status).toBe('Needs review');
+ });
+ it('keeps ambiguous name and college matches out of the result',()=>{
+  const students=parseRows([['Student Name','Roll'],['Same Name','123456'],['Same Name','123457']],'students','students.xlsx');
+  const web=parseRows([['WEB Roll*','Name','College'],['123456','Same Name','Same College'],['123457','Same Name','Same College']],'web','web.xlsx');
+  const mcq=parseRows([['Roll Number','Score'],['123456','15'],['123457','14']],'mcq','mcq.xlsx');
+  const cq=parseRows([['Roll','Student Name','College','Marks'],['','Same Name','Same College','25']],'cq','cq.xlsx');
+  const recovery=resolveCqRows({students,web,mcq,cq});
+  expect(recovery.map.size).toBe(0);
+  expect(recovery.report[0].Status).toBe('Needs review');
+ });
+ it('supports minor spelling variation without treating unrelated names as equal',()=>{
+  expect(textSimilarity('Ariyan Rahmn','Ariyan Rahman')).toBeGreaterThan(.9);
+  expect(textSimilarity('Ariyan Rahman','Samiul Islam')).toBeLessThan(.5);
  });
 });

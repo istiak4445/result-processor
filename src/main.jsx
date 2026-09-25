@@ -100,13 +100,44 @@ export function makeMap(src){
   return {map,duplicates,invalid,records};
 }
 function sourceValue(record, source, field){const i=source?.mapping[field]; return i>=0 ? String(record?.row?.[i]??'').trim():''}
+function normalizeText(value){return String(value??'').toLowerCase().replace(/\b(md|mohammad|muhammad|mohammed)\b/g,'mohammad').replace(/\b(clg|coll)\b/g,'college').replace(/&/g,' and ').replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim()}
+function levenshtein(a,b){const row=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){let prev=row[0];row[0]=i;for(let j=1;j<=b.length;j++){const hold=row[j];row[j]=Math.min(row[j]+1,row[j-1]+1,prev+(a[i-1]===b[j-1]?0:1));prev=hold}}return row[b.length]}
+function acronym(value){return normalizeText(value).split(' ').filter(x=>x&&!['and','of','the'].includes(x)).map(x=>x[0]).join('')}
+export function textSimilarity(left,right){const a=normalizeText(left),b=normalizeText(right);if(!a||!b)return 0;if(a===b)return 1;const at=new Set(a.split(' ')),bt=new Set(b.split(' '));const intersection=[...at].filter(x=>bt.has(x)).length;const tokenScore=(2*intersection)/(at.size+bt.size);const charScore=1-levenshtein(a,b)/Math.max(a.length,b.length);const containment=(a.includes(b)||b.includes(a))?0.88:0;return Math.max(tokenScore,charScore,containment)}
+function collegeSimilarity(left,right){const score=textSimilarity(left,right),a=normalizeText(left),b=normalizeText(right),aa=acronym(a),bb=acronym(b);return Math.max(score,(aa.length>1&&(aa===b||bb===a||aa===bb))?0.96:0)}
+function rollDistance(a,b){if(!a||!b)return 99;return levenshtein(a,b)}
+export function resolveCqRows(sources,indexes={}){
+  const s=indexes.students||makeMap(sources.students),w=indexes.web||makeMap(sources.web),m=indexes.mcq||makeMap(sources.mcq),c=indexes.cq||makeMap(sources.cq);
+  const resolved=new Map(),report=[],used=new Set();
+  if(!sources.cq)return {map:resolved,report};
+  const rollCounts=new Map();c.records.forEach(r=>{if(r.valid)rollCounts.set(r.normalized,(rollCounts.get(r.normalized)||0)+1)});
+  const candidates=[...m.map.entries()].filter(([roll])=>s.map.has(roll)&&!m.duplicates.has(roll)).map(([roll,mcq])=>{const web=w.map.get(roll),student=s.map.get(roll);return {roll,mcq,name:sourceValue(web,sources.web,'name')||sourceValue(student,sources.students,'name'),college:sourceValue(web,sources.web,'college')}});
+  c.records.forEach(record=>{
+    const originalRoll=record.original;const cqName=sourceValue(record,sources.cq,'name');const cqCollege=sourceValue(record,sources.cq,'college');const markRaw=sourceValue(record,sources.cq,'mark');const mark=Number(markRaw);
+    const base={row:record.rowNumber,'Original CQ Roll':originalRoll,'CQ Name':cqName,'CQ College':cqCollege,'CQ Mark':markRaw};
+    if(markRaw===''||!Number.isFinite(mark)){report.push({...base,Status:'Skipped','Resolved Roll':'',Confidence:'','Reason':'CQ mark is blank or invalid'});return}
+    if(!sources.mcq){report.push({...base,Status:'Skipped','Resolved Roll':'',Confidence:'','Reason':'MCQ sheet is required before CQ can be applied'});return}
+    if(record.valid&&m.duplicates.has(record.normalized)){report.push({...base,Status:'Duplicate','Resolved Roll':'',Confidence:'','Reason':'Matching MCQ roll is duplicated'});return}
+    if(record.valid&&m.map.has(record.normalized)&&s.map.has(record.normalized)&&!m.duplicates.has(record.normalized)&&(rollCounts.get(record.normalized)||0)===1&&!used.has(record.normalized)){
+      resolved.set(record.normalized,record);used.add(record.normalized);report.push({...base,Status:'Exact match','Resolved Roll':record.normalized,Confidence:'100%','Reason':'Unique CQ roll confirmed in MCQ'});return;
+    }
+    if(record.valid&&(rollCounts.get(record.normalized)||0)>1){report.push({...base,Status:'Duplicate','Resolved Roll':'',Confidence:'','Reason':'Duplicate roll in CQ sheet'});return}
+    if(!cqName||!cqCollege){report.push({...base,Status:'Needs review','Resolved Roll':'',Confidence:'','Reason':'Name and college are required for safe recovery'});return}
+    const ranked=candidates.filter(x=>!used.has(x.roll)&&x.name&&x.college).map(candidate=>{const nameScore=textSimilarity(cqName,candidate.name),collegeScore=collegeSimilarity(cqCollege,candidate.college),distance=record.valid?rollDistance(record.normalized,candidate.roll):99;const rollScore=distance===1?10:distance===2?4:0;return {...candidate,nameScore,collegeScore,distance,score:nameScore*65+collegeScore*25+rollScore}}).sort((a,b)=>b.score-a.score);
+    const best=ranked[0],second=ranked[1];const gap=best?best.score-(second?.score||0):0;const safe=best&&best.nameScore>=.9&&best.collegeScore>=.65&&best.score>=82&&gap>=15&&(record.valid?best.distance<=2:true);
+    if(!safe){report.push({...base,Status:'Needs review','Resolved Roll':best?.roll||'',Confidence:best?`${Math.round(best.score)}%`:'','Reason':best?`No unique high-confidence match (gap ${Math.round(gap)})`:'No eligible MCQ candidate'});return}
+    resolved.set(best.roll,record);used.add(best.roll);report.push({...base,Status:'Auto-recovered','Resolved Roll':best.roll,Confidence:`${Math.round(best.score)}%`,'Reason':`Name ${Math.round(best.nameScore*100)}% · College ${Math.round(best.collegeScore*100)}%${record.valid?` · Roll distance ${best.distance}`:''}`});
+  });
+  return {map:resolved,report};
+}
 export function processSources(sources){
   const s=makeMap(sources.students), w=makeMap(sources.web), m=makeMap(sources.mcq), c=makeMap(sources.cq), manual=makeMap(sources.manual);
+  const cqResolution=resolveCqRows(sources,{students:s,web:w,mcq:m,cq:c});
   const label=(src,fallback)=>src?.fileName||fallback;
-  const examRolls=new Set([...m.map.keys(),...c.map.keys(),...manual.map.keys()]);
+  const examRolls=new Set([...m.map.keys(),...manual.map.keys()]);
   const results=[], audit=[];
   [...examRolls].forEach((roll,index)=>{
-    const student=s.map.get(roll), web=w.map.get(roll), mcq=m.map.get(roll), cq=c.map.get(roll), manualRow=manual.map.get(roll);
+    const student=s.map.get(roll), web=w.map.get(roll), mcq=m.map.get(roll), cq=cqResolution.map.get(roll), manualRow=manual.map.get(roll);
     audit.push({roll,students:student?'Matched':'NOT FOUND',web:web?'Matched':'Not used',mcq:sources.mcq?(mcq?'Matched':'Missing'):'Not supplied',cq:sources.cq?(cq?'Matched':'Missing'):'Not supplied'});
     if(!student&&!web&&!manualRow)return;
     const mcqRaw=sourceValue(mcq,sources.mcq,'mark'), cqRaw=sourceValue(cq,sources.cq,'mark');
@@ -121,33 +152,31 @@ export function processSources(sources){
   const sorted=[...results].sort((a,b)=>(b.total??-Infinity)-(a.total??-Infinity)||a.roll.localeCompare(b.roll));
   let rank=0,last=null; sorted.forEach(r=>{if(r.total===null)return; if(r.total!==last){rank++;last=r.total}r.rank=rank});
   const issueRows=[
-    ...[['MCQ',m,sources.mcq],['CQ',c,sources.cq]].flatMap(([kind,indexed,src])=>indexed.invalid.map(r=>({type:r.original?`Invalid ${kind} roll`:`${kind} roll missing`,roll:r.original,detail:`${kind} · ${src.fileName} · Row ${r.rowNumber}${sourceValue(r,src,'name')?` · ${sourceValue(r,src,'name')}`:''}: ${src.mapping.roll<0?'Roll column not selected':r.reason}`}))),
+    ...m.invalid.map(r=>({type:r.original?'Invalid MCQ roll':'MCQ roll missing',roll:r.original,detail:`MCQ · ${sources.mcq.fileName} · Row ${r.rowNumber}${sourceValue(r,sources.mcq,'name')?` · ${sourceValue(r,sources.mcq,'name')}`:''}: ${sources.mcq.mapping.roll<0?'Roll column not selected':r.reason}`})),
     ...manual.invalid.map(r=>({type:'Invalid manual roll',roll:r.original,detail:`Manual row ${r.rowNumber}: ${r.reason.replace('Expected ','').replace('; found ','; got ')}`})),
     ...[...s.duplicates].filter(roll=>examRolls.has(roll)).map(roll=>({type:'Duplicate roll',roll,detail:'Repeated exam roll in Students',source:label(sources.students,'Students')})),
     ...[...w.duplicates].filter(roll=>examRolls.has(roll)).map(roll=>({type:'Duplicate roll',roll,detail:'Repeated exam roll in Web Roll',source:label(sources.web,'Web Roll')})),
     ...[...m.duplicates].map(roll=>({type:'Duplicate roll',roll,detail:'Repeated in MCQ',source:label(sources.mcq,'MCQ')})),
-    ...[...c.duplicates].map(roll=>({type:'Duplicate roll',roll,detail:'Repeated in CQ',source:label(sources.cq,'CQ')})),
     ...[...manual.duplicates].map(roll=>({type:'Duplicate manual roll',roll,detail:'Repeated in manual roll list'})),
     ...[...examRolls].filter(roll=>!s.map.has(roll)&&!w.map.has(roll)).map(roll=>({type:'Not in Students',roll,detail:`${[['MCQ',m,sources.mcq],['CQ',c,sources.cq]].flatMap(([kind,indexed,src])=>indexed.records.filter(r=>r.valid&&r.normalized===roll).map(r=>`${kind} · ${src.fileName} · Row ${r.rowNumber} · original ${r.original}`)).join('; ')||'Manual entry'}: No match in Students${sources.web?' or valid Web Roll':' (Web sheet not loaded)'}`})),
     ...(sources.mcq&&(sources.manual||sources.cq)?results.filter(r=>r.mcq===null&&sourceValue(manual.map.get(r.roll),sources.manual,'mark')==='').map(r=>({type:'MCQ missing',roll:r.roll,detail:sources.manual?'Manual roll not found in MCQ':'Present in CQ only'})):[]),
-    ...(sources.cq&&(sources.manual||sources.mcq)?results.filter(r=>r.cq===null&&sourceValue(manual.map.get(r.roll),sources.manual,'mark')==='').map(r=>({type:'CQ missing',roll:r.roll,detail:sources.manual?'Manual roll not found in CQ':'Present in MCQ only'})):[]),
     ...results.filter(r=>!r.name).map(r=>({type:'Name missing',roll:r.roll,detail:'Name blank in Students and Web'})),
   ];
-  return {results:sorted,audit,issues:issueRows.map(({type,roll,detail})=>({type,roll,'Marks source':type.includes('MCQ')?'MCQ':type.includes('CQ')?'CQ':[['MCQ',m],['CQ',c]].filter(([,indexed])=>indexed.map.has(roll)).map(([kind])=>kind).join(' + ')||(manual.map.has(roll)?'Manual':'—'),'Manual Mark':sourceValue(manual.map.get(roll),sources.manual,'mark'),'Manual Status':manual.map.has(roll)?'✓ Edited':'',description:detail}))};
+  return {results:sorted,audit,cqRecovery:cqResolution.report,issues:issueRows.map(({type,roll,detail})=>({type,roll,'Marks source':type.includes('MCQ')?'MCQ':m.map.has(roll)?'MCQ':manual.map.has(roll)?'Manual':'—','Manual Mark':sourceValue(manual.map.get(roll),sources.manual,'mark'),'Manual Status':manual.map.has(roll)?'✓ Edited':'',description:detail}))};
 }
 function SourceCard({type,source,onFile}){const t=TYPES[type];return <label className={`source-card ${source?'ready':''}`}>
   <input type="file" accept=".xlsx,.xls,.csv" onChange={e=>e.target.files[0]&&onFile(e.target.files[0],type)}/>
   <span className={`source-icon ${t.color}`}><FileSpreadsheet size={21}/></span><span className="grow"><b>{t.label}</b><small>{source?source.fileName:t.hint}</small></span>
   {source?<CheckCircle2 className="ok" size={20}/>:<Upload size={18}/>}<em>{['mcq','cq'].includes(type)?'Optional · Read-only':'Read-only'}</em>
  </label>}
-function Mapping({source,onChange}){if(!source)return null;return <div className="mapping"><b>Detected columns · {source.fileName}</b><div>{['roll','name','college','mark'].filter(f=>f==='roll'||(source.type==='web'&&['name','college'].includes(f))||(['mcq','cq'].includes(source.type)&&f==='mark')||(source.type==='students'&&['name','college'].includes(f))).map(f=><label key={f}><span>{f}</span><select value={source.mapping[f]} onChange={e=>onChange(source.type,f,+e.target.value)}><option value={-1}>Not found</option>{source.headers.map((h,i)=><option key={i} value={i}>{h||`Column ${i+1}`}</option>)}</select></label>)}</div></div>}
+function Mapping({source,onChange}){if(!source)return null;return <div className="mapping"><b>Detected columns · {source.fileName}</b><div>{['roll','name','college','mark'].filter(f=>f==='roll'||(source.type==='web'&&['name','college'].includes(f))||(source.type==='mcq'&&f==='mark')||(source.type==='cq'&&['name','college','mark'].includes(f))||(source.type==='students'&&['name','college'].includes(f))).map(f=><label key={f}><span>{f}</span><select value={source.mapping[f]} onChange={e=>onChange(source.type,f,+e.target.value)}><option value={-1}>Not found</option>{source.headers.map((h,i)=><option key={i} value={i}>{h||`Column ${i+1}`}</option>)}</select></label>)}</div></div>}
 function App(){
  const [customExportName,setCustomExportName]=useState('');
  const initialLibrary=useMemo(()=>{try{const list=JSON.parse(localStorage.getItem('resultflow.savedSheets')||'[]');if(list.length)return list;const old=JSON.parse(localStorage.getItem('resultflow.webRollConfig')||'null');return old?.url?[{id:googleSheetId(old.url),url:old.url,title:'Saved Google Sheet',webTab:old.sheetName||''}]:[]}catch{return []}},[]);
  const [savedSheets,setSavedSheets]=useState(initialLibrary); const [activeSavedId,setActiveSavedId]=useState(initialLibrary[0]?.id||'');
  const [savedSessions,setSavedSessions]=useState([]);const [activeSessionId,setActiveSessionId]=useState('');const [sessionStartedAt,setSessionStartedAt]=useState(()=>new Date().toISOString());const [sessionCustomName,setSessionCustomName]=useState('');const [sessionStatus,setSessionStatus]=useState('');
  const [sources,setSources]=useState({}); const [link,setLink]=useState(''); const [sheetNames,setSheetNames]=useState([]); const [selectedSheet,setSelectedSheet]=useState(''); const [linkedMatrices,setLinkedMatrices]=useState({}); const [manualRows,setManualRows]=useState([{roll:'',name:'',college:'',mark:'',added:false}]); const [outputFields,setOutputFields]=useState(()=>OUTPUT_FIELDS.map(([id])=>id)); const [busy,setBusy]=useState(''); const [tab,setTab]=useState('results'); const [workspaceTab,setWorkspaceTab]=useState('processor'); const [showIssueDetails,setShowIssueDetails]=useState(false); const [issueFilter,setIssueFilter]=useState(''); const [issueSearch,setIssueSearch]=useState(''); const [error,setError]=useState('');
- const processed=useMemo(()=>processSources(sources),[sources]); const complete=!!sources.students&&!!(sources.mcq||sources.cq);
+ const processed=useMemo(()=>processSources(sources),[sources]); const complete=!!sources.students&&!!(sources.mcq||sources.manual);
  const autoExportName=automaticExportName(sources.mcq?.fileName||sources.cq?.fileName,{mcq:!!sources.mcq,cq:!!sources.cq});
  const exportBaseName=customExportName.trim()?safeExportName(customExportName):autoExportName;
  const sessionTitle=`${sessionCustomName.trim()?`${sessionCustomName.trim()} · `:''}${autoExportName} · Started ${new Date(sessionStartedAt).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'})}`;
@@ -175,7 +204,7 @@ async function loadGoogleSheet(url,{save=false,preferredTab='',knownTitle=''}={}
  function toggleOutput(id){setOutputFields(fields=>fields.includes(id)?(fields.length>1?fields.filter(x=>x!==id):fields):[...fields,id])}
  function dataset(){return processed.results.map(r=>Object.fromEntries(OUTPUT_FIELDS.filter(([id])=>outputFields.includes(id)).map(([id,label])=>[label,r[id]??''])))}
  const imageSource=useMemo(()=>{const data=dataset();return {headers:Object.keys(data[0]||{}),rows:data.map(row=>Object.values(row).map(value=>String(value??''))) }},[processed.results,outputFields]);
- function exportXlsx(){const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(dataset()),'Final Result');XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(processed.issues),'Validation Issues');XLSX.writeFile(wb,`${exportBaseName}.xlsx`)}
+ function exportXlsx(){const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(dataset()),'Final Result');XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(processed.issues),'Validation Issues');XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(processed.cqRecovery),'CQ Recovery');XLSX.writeFile(wb,`${exportBaseName}.xlsx`)}
  function exportCsv(){const csv=XLSX.utils.sheet_to_csv(XLSX.utils.json_to_sheet(dataset()));const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=`${exportBaseName}.csv`;a.click();URL.revokeObjectURL(a.href)}
  function exportPdf(){const doc=new jsPDF({orientation:'landscape'});doc.setFontSize(18);doc.text('Final Examination Result',14,16);doc.setFontSize(9);doc.text(`Generated ${new Date().toLocaleString()}`,14,22);autoTable(doc,{startY:27,head:[Object.keys(dataset()[0]||{})],body:dataset().map(Object.values),styles:{fontSize:8},headStyles:{fillColor:[41,38,74]}});doc.save(`${exportBaseName}.pdf`)}
  useEffect(()=>{refreshSessions()},[]);
@@ -196,12 +225,13 @@ async function loadGoogleSheet(url,{save=false,preferredTab='',knownTitle=''}={}
  {sources.web?.linked&&<div className="active"><CheckCircle2 size={16}/> Active database: <b>{sources.web.workbookTitle}</b> · {sources.web.sheetName}<a href={sources.web.link} target="_blank">Open source</a></div>}
  </section>
  <section className="panel"><div className="section-title"><div><span>02</span><h2>Verify detected columns</h2></div><p>Headers are auto-detected even when they are not on row 1.</p></div>{Object.values(sources).length?<div className="mapping-grid">{Object.values(sources).map(s=><Mapping key={s.type} source={s} onChange={mapping}/>)}</div>:<div className="empty">Upload a source to see its detected headers.</div>}</section>
- <section className="panel"><div className="section-title"><div><span>03</span><h2>Validation & result preview</h2></div><p>{complete?'Processing is ready. Review every warning before export.':'Students and at least one marks file are required. Web Roll is optional enrichment.'}</p></div>
+ <section className="panel"><div className="section-title"><div><span>03</span><h2>Validation & result preview</h2></div><p>{complete?'Processing is ready. Review every warning before export.':'Students and MCQ sheets are required for uploaded results. CQ is optional enrichment.'}</p></div>
  {complete&&<div className="processing-banner"><CheckCircle2 size={22}/><div><b>Result preview is ready</b><small>{processed.results.length} exam rolls processed · {processed.results.filter(r=>r.rank!==null).length} ranked · {processed.issues.length} issues</small></div><button onClick={()=>setTab('results')}>View final result</button></div>}
  <div className="metrics"><div><b>{processed.results.length}</b><span>Exam rolls processed</span></div><div><b>{processed.issues.length}</b><span>Issues to review</span></div><div><b>{processed.results.filter(r=>r.total!==null).length}</b><span>Scores available</span></div><div><b>{processed.results.filter(r=>r.rank!==null).length}</b><span>Ranked rows</span></div></div>
- <div className="tabs"><button className={tab==='results'?'on':''} onClick={()=>setTab('results')}>Final result</button><button className={tab==='issues'?'on':''} onClick={()=>setTab('issues')}>Issues <em>{processed.issues.length}</em></button><button className={tab==='audit'?'on':''} onClick={()=>setTab('audit')}>Audit log</button></div>
+ <div className="tabs"><button className={tab==='results'?'on':''} onClick={()=>setTab('results')}>Final result</button><button className={tab==='cq'?'on':''} onClick={()=>setTab('cq')}>CQ Recovery <em>{processed.cqRecovery.length}</em></button><button className={tab==='issues'?'on':''} onClick={()=>setTab('issues')}>Issues <em>{processed.issues.length}</em></button><button className={tab==='audit'?'on':''} onClick={()=>setTab('audit')}>Audit log</button></div>
+ {tab==='cq'&&<div className="cq-note"><b>CQ recovery is isolated from general issues.</b><span>Only unique, high-confidence matches with an existing MCQ roll are applied automatically.</span></div>}
  {tab==='issues'&&Object.keys(issueCounts).length>0&&<><div className="chips concise"><button className={!issueFilter?'selected':''} onClick={()=>{setIssueFilter('');setShowIssueDetails(true)}}><b>{processed.issues.length}</b>All issues</button>{Object.entries(issueCounts).map(([k,v])=><button className={`${issueFilter===k?'selected ':''}${k==='Manual edited'?'manual-chip':''}`} key={k} onClick={()=>{setIssueFilter(k);setShowIssueDetails(true)}}>{k==='Manual edited'?<CheckCircle2 size={13}/>:<AlertTriangle size={13}/>}<b>{v}</b>{k}</button>)}</div><div className="issue-tools"><input value={issueSearch} onChange={e=>{setIssueSearch(e.target.value);setShowIssueDetails(true)}} placeholder="Search roll or issue description…"/><span>{filteredIssues.length} of {processed.issues.length}</span>{(issueFilter||issueSearch)&&<button onClick={()=>{setIssueFilter('');setIssueSearch('')}}>Clear filters</button>}<button className="details-toggle" onClick={()=>setShowIssueDetails(v=>!v)}>{showIssueDetails?'Hide rows':'Show rows'}</button></div></>}
- {(tab!=='issues'||showIssueDetails||processed.issues.length===0)&&<Table tab={tab} data={tab==='results'?dataset():tab==='issues'?filteredIssues:processed.audit}/>} 
+ {(tab!=='issues'||showIssueDetails||processed.issues.length===0)&&<Table tab={tab} data={tab==='results'?dataset():tab==='cq'?processed.cqRecovery:tab==='issues'?filteredIssues:processed.audit}/>}
  <div className="field-options"><div><b>Final output fields</b><small>Choose what appears in preview and every export.</small></div>{OUTPUT_FIELDS.map(([id,label])=><label key={id}><input type="checkbox" checked={outputFields.includes(id)} onChange={()=>toggleOutput(id)}/><span>{label}</span></label>)}</div>
  <label className="sheet-picker"><span>Export filename · automatic</span><input value={customExportName} placeholder={autoExportName} onChange={e=>setCustomExportName(e.target.value)}/><small>{exportBaseName} · Leave blank for automatic naming from MCQ/CQ.</small></label>
  <div className="export"><div><b>Ready when you are</b><small>Exports contain clean result fields only. Paid Amount and helpers are excluded.</small></div><button onClick={exportCsv} disabled={!processed.results.length}><Download size={16}/> CSV</button><button onClick={exportPdf} disabled={!processed.results.length}><Download size={16}/> PDF</button><button className="primary" onClick={exportXlsx} disabled={!processed.results.length}><Download size={16}/> Excel</button></div>

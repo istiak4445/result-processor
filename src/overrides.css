@@ -21,5 +21,6 @@
 main.image-workspace-active{max-width:none;padding:0}
 .image-workspace{width:100%;background:#050816}
 .image-maker-shell{width:100%;overflow:hidden}
+.cq-note{display:flex;align-items:center;gap:10px;margin:10px 0 14px;padding:11px 13px;border:1px solid #d8cdf4;border-radius:10px;background:#f7f3ff;color:#574596;font-size:11px}.cq-note span{color:#766e85}
 @media(max-width:720px){header{height:auto;min-height:72px;gap:10px;flex-wrap:wrap;padding-top:10px;padding-bottom:10px}.workspace-tabs{order:3;width:100%}.workspace-tabs button{flex:1;justify-content:center}}
 .database-picker input{width:100%;box-sizing:border-box;border:1px solid #d7d0e2;border-radius:9px;background:#fff;padding:11px 12px;font-weight:600;color:#352f48}
