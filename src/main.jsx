@@ -128,7 +128,34 @@ function sourceValue(record, source, field){const i=source?.mapping[field]; retu
 function normalizeText(value){return String(value??'').toLowerCase().replace(/\b(md|mohammad|muhammad|mohammed)\b/g,'mohammad').replace(/\b(clg|coll)\b/g,'college').replace(/&/g,' and ').replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim()}
 function levenshtein(a,b){const row=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){let prev=row[0];row[0]=i;for(let j=1;j<=b.length;j++){const hold=row[j];row[j]=Math.min(row[j]+1,row[j-1]+1,prev+(a[i-1]===b[j-1]?0:1));prev=hold}}return row[b.length]}
 function acronym(value){return normalizeText(value).split(' ').filter(x=>x&&!['and','of','the'].includes(x)).map(x=>x[0]).join('')}
-export function textSimilarity(left,right){const a=normalizeText(left),b=normalizeText(right);if(!a||!b)return 0;if(a===b)return 1;const at=new Set(a.split(' ')),bt=new Set(b.split(' '));const intersection=[...at].filter(x=>bt.has(x)).length;const tokenScore=(2*intersection)/(at.size+bt.size);const charScore=1-levenshtein(a,b)/Math.max(a.length,b.length);const containment=(a.includes(b)||b.includes(a))?0.88:0;return Math.max(tokenScore,charScore,containment)}
+export function phonetic(v){
+  return normalizeText(v)
+    .replace(/sh/g,'s')
+    .replace(/ee/g,'i')
+    .replace(/oo/g,'u')
+    .replace(/ou/g,'ow')
+    .replace(/c(?=[eiy])/g,'s')
+    .replace(/c/g,'k')
+    .replace(/q/g,'k')
+    .replace(/z/g,'j')
+    .replace(/ph/g,'f')
+    .replace(/e(?=\b)/g,'i')
+    .replace(/(.)\1+/g,'$1');
+}
+export function textSimilarity(left,right){
+  const a=normalizeText(left),b=normalizeText(right);
+  if(!a||!b)return 0;
+  if(a===b)return 1;
+  const pa=phonetic(a),pb=phonetic(b);
+  if(pa===pb)return 0.98;
+  const at=new Set(a.split(' ')),bt=new Set(b.split(' '));
+  const intersection=[...at].filter(x=>bt.has(x)).length;
+  const tokenScore=(2*intersection)/(at.size+bt.size);
+  const charScore=1-levenshtein(a,b)/Math.max(a.length,b.length);
+  const phoneticCharScore=1-levenshtein(pa,pb)/Math.max(pa.length,pb.length);
+  const containment=(a.includes(b)||b.includes(a)||pa.includes(pb)||pb.includes(pa))?0.88:0;
+  return Math.max(tokenScore,charScore,phoneticCharScore,containment);
+}
 function collegeSimilarity(left,right){const score=textSimilarity(left,right),a=normalizeText(left),b=normalizeText(right),aa=acronym(a),bb=acronym(b);return Math.max(score,(aa.length>1&&(aa===b||bb===a||aa===bb))?0.96:0)}
 function rollDistance(a,b){if(!a||!b)return 99;return levenshtein(a,b)}
 export function resolveCqRows(sources,indexes={}){
@@ -186,13 +213,17 @@ export function resolveCqRows(sources,indexes={}){
       return;
     }
 
-    // 1. Exact normalized name match
-    const exactNameMatches=available.filter(cand=>normalizeText(cand.name)===normCqName);
+    // 1. Exact normalized or phonetic name match (e.g. istiak vs ishtiak, shreya vs sreya)
+    const exactNameMatches=available.filter(cand=>{
+      const candNorm=normalizeText(cand.name);
+      return candNorm===normCqName||phonetic(candNorm)===phonetic(normCqName);
+    });
     if(exactNameMatches.length===1){
       const best=exactNameMatches[0];
       resolved.set(best.roll,record);
       used.add(best.roll);
-      report.push({...base,Status:'Auto-recovered','Resolved Roll':best.roll,Confidence:'100%',Reason:`Exact name match with ${best.name}${best.college?` (${best.college})`:''}`});
+      const isPhonetic=normalizeText(best.name)!==normCqName;
+      report.push({...base,Status:'Auto-recovered','Resolved Roll':best.roll,Confidence:isPhonetic?'98%':'100%',Reason:`Name ${isPhonetic?'variation/phonetic ':'exact '}match with ${best.name}${best.college?` (${best.college})`:''}`});
       return;
     } else if(exactNameMatches.length>1){
       const withCollege=cqCollege?exactNameMatches.filter(cand=>cand.college&&collegeSimilarity(cqCollege,cand.college)>=.7):[];
@@ -200,10 +231,10 @@ export function resolveCqRows(sources,indexes={}){
         const best=withCollege[0];
         resolved.set(best.roll,record);
         used.add(best.roll);
-        report.push({...base,Status:'Auto-recovered','Resolved Roll':best.roll,Confidence:'98%',Reason:`Name exact match & college confirmed (${best.college})`});
+        report.push({...base,Status:'Auto-recovered','Resolved Roll':best.roll,Confidence:'98%',Reason:`Name matched & college confirmed (${best.college})`});
         return;
       }
-      report.push({...base,Status:'Needs review','Resolved Roll':'',Confidence:'',Reason:`Multiple students with identical name "${cqName}" missing CQ`});
+      report.push({...base,Status:'Needs review','Resolved Roll':'',Confidence:'',Reason:`Multiple students with matching name "${cqName}" missing CQ`});
       return;
     }
 
@@ -219,7 +250,7 @@ export function resolveCqRows(sources,indexes={}){
 
     const best=scored[0],second=scored[1];
     const gap=best?best.totalScore-(second?.totalScore||0):0;
-    const safe=best&&best.nameScore>=.88&&best.totalScore>=78&&(gap>=12||available.length===1);
+    const safe=best&&best.nameScore>=.80&&best.totalScore>=72&&(gap>=10||available.length===1);
 
     if(safe){
       resolved.set(best.cand.roll,record);

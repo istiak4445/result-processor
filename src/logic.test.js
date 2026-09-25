@@ -145,4 +145,12 @@ describe('CQ recovery',()=>{
   expect(result.results[0]).toMatchObject({roll:'28280251',name:'Shreya Das Oishi',college:'Aunkur society girls high school',mcq:18,cq:20,total:38});
   expect(result.cqRecovery).toHaveLength(0);
  });
+ it('recovers CQ marks when name has spelling/phonetic variation (istiak vs ishtiak)',()=>{
+  const web=parseRows([['WEB Roll*','Name'],['28280011','Istiak Ahmed']],'web','web.xlsx');
+  const mcq=parseRows([['Roll Number','Score'],['28280011','19']],'mcq','mcq.xlsx');
+  const cq=parseRows([['Student Name','Marks'],['Ishtiak Ahmed','21']],'cq','cq.xlsx');
+  const result=processSources({web,mcq,cq});
+  expect(result.results[0]).toMatchObject({roll:'28280011',name:'Istiak Ahmed',mcq:19,cq:21,total:40});
+  expect(result.cqRecovery[0]).toMatchObject({Status:'Auto-recovered','Resolved Roll':'28280011'});
+ });
 });
