@@ -81,6 +81,7 @@ const defaultBrand = {
   contact: '',
   web: '',
   note: '',
+  printMeta: false,
 };
 
 const defaultBrandOptions = {
@@ -375,6 +376,7 @@ export default function ImageMaker({ sourceData, exportBaseName='Exam Result', c
               <option value="logo">Logo</option>
               <option value="strip">Logo strip</option>
             </SelectInput>
+            <Toggle label="Print batch, exam & date in header" checked={brand.printMeta ?? false} onChange={(printMeta) => setBrand({ ...brand, printMeta })} />
             <label className="secondary-button w-full cursor-pointer">
               <ImageIcon size={16} />
               Upload top logo
@@ -640,6 +642,11 @@ const ResultCard = React.forwardRef(function ResultCard(
           <TopBrand brand={brand} brandOptions={brandOptions} accent={accent} isSquare={isSquare} />
           <h2 className={`${isSquare ? 'text-[52px]' : 'text-[62px]'} font-black leading-none tracking-normal`} style={{ color: accent.primary }}>{brand.title}</h2>
           <p className={`${isSquare ? 'mt-3 text-2xl' : 'mt-4 text-3xl'} font-semibold text-slate-100`}>{brand.subtitle}</p>
+          {(brand.printMeta || brand.showMeta) && (
+            <p className={`${isSquare ? 'mt-2 text-lg' : 'mt-3 text-xl'} font-bold tracking-wide`} style={{ color: accent.primary }}>
+              {[brand.batch, brand.exam, brand.date].filter(Boolean).join('  •  ')}
+            </p>
+          )}
         </div>
 
         <div className="flex min-h-0 flex-1 items-start justify-center px-10" style={{ paddingBottom: tableShellPadding, height: tableAreaHeight + tableShellPadding }}>

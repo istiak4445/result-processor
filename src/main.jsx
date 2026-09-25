@@ -17,10 +17,10 @@ const TYPES = {
   cq:{label:'CQ result', hint:'Creative marks', color:'green'},
 };
 const SYN = {
-  roll:['roll','roll number','roll no','web roll','web roll*','roll/phone','student roll'],
-  name:['student name','name','full name'],
-  college:['college','institution','school','college / institution name'],
-  mark:['marks','mark','score','mcq','cq','total score'],
+  roll:['roll','roll number','roll no','roll no.','web roll','web roll*','web roll number','roll/phone','student roll','candidate roll','exam roll','board roll','class roll','student id','candidate id','id','reg','registration','reg no','reg number'],
+  name:['student name','name','full name','candidate name','examinee name','student','name of student','name of candidate'],
+  college:['college','institution','school','college / institution name','college name','school name','institute','institution name','institution/school','college/school'],
+  mark:['marks','mark','score','mcq','cq','total score','cq mark','cq marks','written','written mark','written marks','obtained mark','obtained marks','total marks'],
 };
 const OUTPUT_FIELDS=[
   ['rank','Rank'],['roll','Roll'],['name','Student Name'],['college','Institution'],['mcq','MCQ'],['cq','CQ'],['total','Total']
@@ -56,13 +56,28 @@ function detectColumn(headers, field, type){
   }
   const exact=SYN[field].map(s=>normalized.indexOf(s)).find(i=>i>=0);
   if(exact!==undefined) return exact;
-  return normalized.findIndex(h=>SYN[field].some(s=>h.includes(s)));
+  const partial=normalized.findIndex(h=>SYN[field].some(s=>h===s||h.includes(s)));
+  if(partial>=0) return partial;
+  return -1;
 }
 export function parseRows(matrix, type, fileName){
   const headerIndex=detectHeader(matrix); const headers=(matrix[headerIndex]||[]).map(v=>String(v??'').trim());
   const entries=matrix.slice(headerIndex+1).map((row,i)=>({row,rowNumber:headerIndex+i+2})).filter(({row})=>row.some(v=>String(v??'').trim()!==''));
   const rows=entries.map(x=>x.row),rowNumbers=entries.map(x=>x.rowNumber);
-  return {type,fileName,headerIndex,headers,rows,rowNumbers,mapping:{roll:detectColumn(headers,'roll',type),name:detectColumn(headers,'name',type),college:detectColumn(headers,'college',type),mark:detectColumn(headers,'mark',type)}};
+  const mapping={roll:detectColumn(headers,'roll',type),name:detectColumn(headers,'name',type),college:detectColumn(headers,'college',type),mark:detectColumn(headers,'mark',type)};
+  if(rows.length>0){
+    const sample=rows.slice(0,10);
+    const colCount=Math.max(...sample.map(r=>r.length),0);
+    for(let col=0;col<colCount;col++){
+      const vals=sample.map(r=>String(r[col]??'').trim()).filter(Boolean);
+      if(!vals.length)continue;
+      if(mapping.roll<0&&vals.every(v=>/^\d{6,8}$/.test(v.replace(/-/g,'')))) mapping.roll=col;
+      else if(mapping.mark<0&&vals.every(v=>/^\d+(\.\d+)?$/.test(v)&&Number(v)<=100)) mapping.mark=col;
+      else if(mapping.college<0&&vals.some(v=>/college|school|institution|madrasha|university/i.test(v))) mapping.college=col;
+      else if(mapping.name<0&&vals.some(v=>/^[a-zA-Z\s.]+$/.test(v)&&v.split(/\s+/).length>=2&&!/college|school|institution/i.test(v))) mapping.name=col;
+    }
+  }
+  return {type,fileName,headerIndex,headers,rows,rowNumbers,mapping};
 }
 export function combineCqSources(files=[]){
   const headers=['Roll','Student Name','College','Marks'];
@@ -121,23 +136,103 @@ export function resolveCqRows(sources,indexes={}){
   const resolved=new Map(),report=[],used=new Set();
   if(!sources.cq)return {map:resolved,report};
   const rollCounts=new Map();c.records.forEach(r=>{if(r.valid)rollCounts.set(r.normalized,(rollCounts.get(r.normalized)||0)+1)});
-  const candidates=[...m.map.entries()].filter(([roll])=>s.map.has(roll)&&!m.duplicates.has(roll)).map(([roll,mcq])=>{const web=w.map.get(roll),student=s.map.get(roll);return {roll,mcq,name:sourceValue(web,sources.web,'name')||sourceValue(student,sources.students,'name'),college:sourceValue(web,sources.web,'college')}});
+
+  const getCandidate=(roll)=>{
+    const web=w.map.get(roll),student=s.map.get(roll),mcq=m.map.get(roll);
+    return {
+      roll,
+      mcq,
+      name:sourceValue(web,sources.web,'name')||sourceValue(student,sources.students,'name')||sourceValue(mcq,sources.mcq,'name'),
+      college:sourceValue(web,sources.web,'college')||sourceValue(student,sources.students,'college')||sourceValue(mcq,sources.mcq,'college')
+    };
+  };
+
+  const candidateRolls=[...m.map.keys()].filter(roll=>!m.duplicates.has(roll)&&(s.map.has(roll)||w.map.has(roll)||!sources.students));
+  const unmatchedCq=[];
+
+  // Pass 1: Exact roll matches
   c.records.forEach(record=>{
     const originalRoll=record.original;const cqName=sourceValue(record,sources.cq,'name');const cqCollege=sourceValue(record,sources.cq,'college');const markRaw=sourceValue(record,sources.cq,'mark');const mark=Number(markRaw);
     const base={Source:record.sourceFile||sources.cq.fileName,row:record.rowNumber,'Original CQ Roll':originalRoll,'CQ Name':cqName,'CQ College':cqCollege,'CQ Mark':markRaw};
     if(markRaw===''||!Number.isFinite(mark)){report.push({...base,Status:'Skipped','Resolved Roll':'',Confidence:'','Reason':'CQ mark is blank or invalid'});return}
     if(!sources.mcq){report.push({...base,Status:'Skipped','Resolved Roll':'',Confidence:'','Reason':'MCQ sheet is required before CQ can be applied'});return}
     if(record.valid&&m.duplicates.has(record.normalized)){report.push({...base,Status:'Duplicate','Resolved Roll':'',Confidence:'','Reason':'Matching MCQ roll is duplicated'});return}
-    if(record.valid&&m.map.has(record.normalized)&&s.map.has(record.normalized)&&!m.duplicates.has(record.normalized)&&(rollCounts.get(record.normalized)||0)===1&&!used.has(record.normalized)){
-      resolved.set(record.normalized,record);used.add(record.normalized);report.push({...base,Status:'Exact match','Resolved Roll':record.normalized,Confidence:'100%','Reason':'Unique CQ roll confirmed in MCQ'});return;
-    }
     if(record.valid&&(rollCounts.get(record.normalized)||0)>1){report.push({...base,Status:'Duplicate','Resolved Roll':'',Confidence:'','Reason':'Duplicate roll in CQ sheet'});return}
-    if(!cqName||!cqCollege){report.push({...base,Status:'Needs review','Resolved Roll':'',Confidence:'','Reason':'Name and college are required for safe recovery'});return}
-    const ranked=candidates.filter(x=>!used.has(x.roll)&&x.name&&x.college).map(candidate=>{const nameScore=textSimilarity(cqName,candidate.name),collegeScore=collegeSimilarity(cqCollege,candidate.college),distance=record.valid?rollDistance(record.normalized,candidate.roll):99;const rollScore=distance===1?10:distance===2?4:0;return {...candidate,nameScore,collegeScore,distance,score:nameScore*65+collegeScore*25+rollScore}}).sort((a,b)=>b.score-a.score);
-    const best=ranked[0],second=ranked[1];const gap=best?best.score-(second?.score||0):0;const safe=best&&best.nameScore>=.9&&best.collegeScore>=.65&&best.score>=82&&gap>=15&&(record.valid?best.distance<=2:true);
-    if(!safe){report.push({...base,Status:'Needs review','Resolved Roll':best?.roll||'',Confidence:best?`${Math.round(best.score)}%`:'','Reason':best?`No unique high-confidence match (gap ${Math.round(gap)})`:'No eligible MCQ candidate'});return}
-    resolved.set(best.roll,record);used.add(best.roll);report.push({...base,Status:'Auto-recovered','Resolved Roll':best.roll,Confidence:`${Math.round(best.score)}%`,'Reason':`Name ${Math.round(best.nameScore*100)}% · College ${Math.round(best.collegeScore*100)}%${record.valid?` · Roll distance ${best.distance}`:''}`});
+    if(record.valid&&m.map.has(record.normalized)&&!used.has(record.normalized)){
+      resolved.set(record.normalized,record);
+      used.add(record.normalized);
+      // Clean audit: exact clean matches are merged directly and not cluttered in issues
+      return;
+    }
+    unmatchedCq.push({record,base,cqName,cqCollege,markRaw,mark});
   });
+
+  // Pass 2: Name-based recovery for students who took MCQ but are missing CQ marks
+  const missingCandidates=candidateRolls.filter(roll=>!used.has(roll)).map(getCandidate).filter(cand=>cand.name);
+
+  unmatchedCq.forEach(({record,base,cqName,cqCollege})=>{
+    if(!cqName){
+      report.push({...base,Status:'Needs review','Resolved Roll':'',Confidence:'',Reason:record.original?`CQ roll ${record.original} not found in MCQ and name is blank`:'Both CQ roll and name are missing'});
+      return;
+    }
+    const normCqName=normalizeText(cqName);
+    if(!normCqName){
+      report.push({...base,Status:'Needs review','Resolved Roll':'',Confidence:'',Reason:'CQ name contains no valid text'});
+      return;
+    }
+    const available=missingCandidates.filter(cand=>!used.has(cand.roll));
+    if(!available.length){
+      report.push({...base,Status:'Needs review','Resolved Roll':'',Confidence:'',Reason:record.original?`Roll ${record.original} not in MCQ; no candidate missing CQ`:'No candidate student missing CQ marks'});
+      return;
+    }
+
+    // 1. Exact normalized name match
+    const exactNameMatches=available.filter(cand=>normalizeText(cand.name)===normCqName);
+    if(exactNameMatches.length===1){
+      const best=exactNameMatches[0];
+      resolved.set(best.roll,record);
+      used.add(best.roll);
+      report.push({...base,Status:'Auto-recovered','Resolved Roll':best.roll,Confidence:'100%',Reason:`Exact name match with ${best.name}${best.college?` (${best.college})`:''}`});
+      return;
+    } else if(exactNameMatches.length>1){
+      const withCollege=cqCollege?exactNameMatches.filter(cand=>cand.college&&collegeSimilarity(cqCollege,cand.college)>=.7):[];
+      if(withCollege.length===1){
+        const best=withCollege[0];
+        resolved.set(best.roll,record);
+        used.add(best.roll);
+        report.push({...base,Status:'Auto-recovered','Resolved Roll':best.roll,Confidence:'98%',Reason:`Name exact match & college confirmed (${best.college})`});
+        return;
+      }
+      report.push({...base,Status:'Needs review','Resolved Roll':'',Confidence:'',Reason:`Multiple students with identical name "${cqName}" missing CQ`});
+      return;
+    }
+
+    // 2. Fuzzy name matching
+    const scored=available.map(cand=>{
+      const nameScore=textSimilarity(cqName,cand.name);
+      const colScore=(cqCollege&&cand.college)?collegeSimilarity(cqCollege,cand.college):null;
+      const distance=record.valid?rollDistance(record.normalized,cand.roll):99;
+      const rollScore=distance===1?12:distance===2?6:0;
+      const totalScore=colScore!==null?(nameScore*65+colScore*25+rollScore):(nameScore*90+rollScore);
+      return {cand,nameScore,colScore,distance,totalScore};
+    }).sort((a,b)=>b.totalScore-a.totalScore);
+
+    const best=scored[0],second=scored[1];
+    const gap=best?best.totalScore-(second?.totalScore||0):0;
+    const safe=best&&best.nameScore>=.88&&best.totalScore>=78&&(gap>=12||available.length===1);
+
+    if(safe){
+      resolved.set(best.cand.roll,record);
+      used.add(best.cand.roll);
+      const reasons=[`Name: ${Math.round(best.nameScore*100)}% ("${best.cand.name}")`];
+      if(best.colScore!==null)reasons.push(`College: ${Math.round(best.colScore*100)}%`);
+      if(record.valid&&best.distance<=2)reasons.push(`Roll distance: ${best.distance}`);
+      report.push({...base,Status:'Auto-recovered','Resolved Roll':best.cand.roll,Confidence:`${Math.round(best.totalScore)}%`,Reason:reasons.join(' · ')});
+    }else{
+      report.push({...base,Status:'Needs review','Resolved Roll':best?.cand.roll||'',Confidence:best?`${Math.round(best.totalScore)}%`:'',Reason:best?`Ambiguous candidate ${best.cand.name} (confidence ${Math.round(best.totalScore)}%, gap ${Math.round(gap)})`:'No matching MCQ student found for this name'});
+    }
+  });
+
   return {map:resolved,report};
 }
 export function processSources(sources){
@@ -154,8 +249,8 @@ export function processSources(sources){
     const mv=Number(mcqRaw), cv=Number(cqRaw);
     const mcqOk=!!mcq && mcqRaw!=='' && Number.isFinite(mv), cqOk=!!cq && cqRaw!=='' && Number.isFinite(cv);
     const manualRaw=sourceValue(manualRow,sources.manual,'mark'), manualValue=Number(manualRaw), manualOk=manualRaw!==''&&Number.isFinite(manualValue);
-    const name=sourceValue(web,sources.web,'name')||sourceValue(student,sources.students,'name')||sourceValue(manualRow,sources.manual,'name');
-    const college=sourceValue(web,sources.web,'college')||sourceValue(student,sources.students,'college')||sourceValue(manualRow,sources.manual,'college');
+    const name=sourceValue(web,sources.web,'name')||sourceValue(student,sources.students,'name')||(cq?sourceValue(cq,sources.cq,'name'):'')||sourceValue(manualRow,sources.manual,'name');
+    const college=sourceValue(web,sources.web,'college')||sourceValue(student,sources.students,'college')||(cq?sourceValue(cq,sources.cq,'college'):'')||sourceValue(manualRow,sources.manual,'college');
     const total=mcqOk&&cqOk?mv+cv:mcqOk?mv:cqOk?cv:manualOk?manualValue:null;
     results.push({_id:index,roll,name,college,mcq:mcqOk?mv:null,cq:cqOk?cv:null,total,rank:null});
   });
@@ -243,8 +338,8 @@ async function loadGoogleSheet(url,{save=false,preferredTab='',knownTitle=''}={}
  <section className="panel"><div className="section-title"><div><span>03</span><h2>Validation & result preview</h2></div><p>{complete?'Processing is ready. Review every warning before export.':'Students and MCQ sheets are required for uploaded results. CQ is optional enrichment.'}</p></div>
  {complete&&<div className="processing-banner"><CheckCircle2 size={22}/><div><b>Result preview is ready</b><small>{processed.results.length} exam rolls processed · {processed.results.filter(r=>r.rank!==null).length} ranked · {processed.issues.length} issues</small></div><button onClick={()=>setTab('results')}>View final result</button></div>}
  <div className="metrics"><div><b>{processed.results.length}</b><span>Exam rolls processed</span></div><div><b>{processed.issues.length}</b><span>Issues to review</span></div><div><b>{processed.results.filter(r=>r.total!==null).length}</b><span>Scores available</span></div><div><b>{processed.results.filter(r=>r.rank!==null).length}</b><span>Ranked rows</span></div></div>
- <div className="tabs"><button className={tab==='results'?'on':''} onClick={()=>setTab('results')}>Final result</button><button className={tab==='cq'?'on':''} onClick={()=>setTab('cq')}>CQ Recovery <em>{processed.cqRecovery.length}</em></button><button className={tab==='issues'?'on':''} onClick={()=>setTab('issues')}>Issues <em>{processed.issues.length}</em></button><button className={tab==='audit'?'on':''} onClick={()=>setTab('audit')}>Audit log</button></div>
- {tab==='cq'&&<div className="cq-note"><b>CQ recovery is isolated from general issues.</b><span>Only unique, high-confidence matches with an existing MCQ roll are applied automatically.</span></div>}
+ <div className="tabs"><button className={tab==='results'?'on':''} onClick={()=>setTab('results')}>Final result</button><button className={tab==='cq'?'on':''} onClick={()=>setTab('cq')}>CQ Issues & Recovery <em>{processed.cqRecovery.length}</em></button><button className={tab==='issues'?'on':''} onClick={()=>setTab('issues')}>Issues <em>{processed.issues.length}</em></button><button className={tab==='audit'?'on':''} onClick={()=>setTab('audit')}>Audit log</button></div>
+ {tab==='cq'&&<div className="cq-note"><b>Clean CQ audit.</b><span>Showing only auto-recovered matches and items needing review. Clean exact matches are merged directly into Final Result.</span></div>}
  {tab==='issues'&&Object.keys(issueCounts).length>0&&<><div className="chips concise"><button className={!issueFilter?'selected':''} onClick={()=>{setIssueFilter('');setShowIssueDetails(true)}}><b>{processed.issues.length}</b>All issues</button>{Object.entries(issueCounts).map(([k,v])=><button className={`${issueFilter===k?'selected ':''}${k==='Manual edited'?'manual-chip':''}`} key={k} onClick={()=>{setIssueFilter(k);setShowIssueDetails(true)}}>{k==='Manual edited'?<CheckCircle2 size={13}/>:<AlertTriangle size={13}/>}<b>{v}</b>{k}</button>)}</div><div className="issue-tools"><input value={issueSearch} onChange={e=>{setIssueSearch(e.target.value);setShowIssueDetails(true)}} placeholder="Search roll or issue description…"/><span>{filteredIssues.length} of {processed.issues.length}</span>{(issueFilter||issueSearch)&&<button onClick={()=>{setIssueFilter('');setIssueSearch('')}}>Clear filters</button>}<button className="details-toggle" onClick={()=>setShowIssueDetails(v=>!v)}>{showIssueDetails?'Hide rows':'Show rows'}</button></div></>}
  {(tab!=='issues'||showIssueDetails||processed.issues.length===0)&&<Table tab={tab} data={tab==='results'?dataset():tab==='cq'?processed.cqRecovery:tab==='issues'?filteredIssues:processed.audit}/>}
  <div className="field-options"><div><b>Final output fields</b><small>Choose what appears in preview and every export.</small></div>{OUTPUT_FIELDS.map(([id,label])=><label key={id}><input type="checkbox" checked={outputFields.includes(id)} onChange={()=>toggleOutput(id)}/><span>{label}</span></label>)}</div>
@@ -254,5 +349,5 @@ async function loadGoogleSheet(url,{save=false,preferredTab='',knownTitle=''}={}
  <div className={workspaceTab==='image'?'image-workspace':'workspace-hidden'}><ImageMaker sourceData={imageSource} exportBaseName={exportBaseName} customExportName={customExportName} onExportNameChange={setCustomExportName}/></div>
  </main><footer>ResultFlow · process, edit, design, and export in one workspace</footer></>
 }
-function Table({data}){const rows=data.slice(0,100), headers=Object.keys(rows[0]||{});if(!rows.length)return <div className="empty"><FileSpreadsheet size={27}/> No rows to preview yet.</div>;return <div className="table-wrap"><table><thead><tr>{headers.map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{rows.map((r,i)=><tr key={i}>{headers.map(h=>{const value=String(r[h]??'');return <td className={value.startsWith('✓')?'edited-cell':''} key={h}>{value}</td>})}</tr>)}</tbody></table>{data.length>100&&<p className="more">Showing 100 of {data.length} rows</p>}</div>}
+function Table({data,tab}){const rows=data.slice(0,100), headers=Object.keys(rows[0]||{});if(!rows.length){if(tab==='cq')return <div className="empty"><CheckCircle2 className="ok" size={27}/> All CQ entries matched cleanly with zero issues.</div>;return <div className="empty"><FileSpreadsheet size={27}/> No rows to preview yet.</div>;}return <div className="table-wrap"><table><thead><tr>{headers.map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{rows.map((r,i)=><tr key={i}>{headers.map(h=>{const value=String(r[h]??'');return <td className={value.startsWith('✓')?'edited-cell':''} key={h}>{value}</td>})}</tr>)}</tbody></table>{data.length>100&&<p className="more">Showing 100 of {data.length} rows</p>}</div>}
 if(typeof document!=='undefined') createRoot(document.getElementById('root')).render(<App/>);

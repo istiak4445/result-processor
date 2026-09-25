@@ -128,4 +128,21 @@ describe('CQ recovery',()=>{
   expect(textSimilarity('Ariyan Rahmn','Ariyan Rahman')).toBeGreaterThan(.9);
   expect(textSimilarity('Ariyan Rahman','Samiul Islam')).toBeLessThan(.5);
  });
+ it('recovers CQ marks by name even when roll and college are missing (Adrita Aich case)',()=>{
+  const web=parseRows([['SL','Date','ID','WEB Roll*','Name','College'],['30','14/06/26','3030','281028','Adrita Aich',"City Government Girls' High school"]],'web','web.xlsx');
+  const mcq=parseRows([['Roll Number','Score'],['281028','14']],'mcq','mcq.xlsx');
+  const cq=parseRows([['Student Name','Marks'],['Adrita aich','16']],'cq','cq.xlsx');
+  const result=processSources({web,mcq,cq});
+  expect(result.results[0]).toMatchObject({roll:'00281028',name:'Adrita Aich',mcq:14,cq:16,total:30});
+  expect(result.cqRecovery).toHaveLength(1);
+  expect(result.cqRecovery[0]).toMatchObject({Status:'Auto-recovered','Resolved Roll':'00281028','CQ Mark':'16'});
+ });
+ it('matches CQ roll and inherits college from CQ when web and student college are blank (Shreya Das case)',()=>{
+  const web=parseRows([['WEB Roll*','Name','College'],['28280251','Shreya Das Oishi','']],'web','web.xlsx');
+  const mcq=parseRows([['Roll Number','Score'],['28280251','18']],'mcq','mcq.xlsx');
+  const cq=parseRows([['Name','College','Roll','Marks'],['shreya das oishe','Aunkur society girls high school','28280251','20']],'cq','cq.xlsx');
+  const result=processSources({web,mcq,cq});
+  expect(result.results[0]).toMatchObject({roll:'28280251',name:'Shreya Das Oishi',college:'Aunkur society girls high school',mcq:18,cq:20,total:38});
+  expect(result.cqRecovery).toHaveLength(0);
+ });
 });

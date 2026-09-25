@@ -80,14 +80,15 @@ function drawPage(pdf, node, size, brand, pageNumber, pageCount) {
   const institute = clean(brand.institute) || 'ChemShifu';
   const documentTitle = clean(brand.title) || 'Examination Result';
   const subtitle = clean(brand.subtitle);
-  const meta = [brand.batch, brand.exam, brand.date].map(clean).filter(Boolean);
+  const showMeta = Boolean(brand.printMeta || brand.showMeta);
+  const meta = showMeta ? [brand.batch, brand.exam, brand.date].map(clean).filter(Boolean) : [];
   const { headers, rows } = extractTable(node);
 
   pdf.setFillColor(...ivory);
   pdf.rect(0, 0, width, height, 'F');
 
   const headerY = u(42);
-  const headerH = u(238);
+  const headerH = meta.length ? u(238) : u(195);
   pdf.setFillColor(...navy);
   pdf.roundedRect(margin, headerY, contentWidth, headerH, u(24), u(24), 'F');
   pdf.setFillColor(...gold);
@@ -100,12 +101,12 @@ function drawPage(pdf, node, size, brand, pageNumber, pageCount) {
   pdf.setTextColor(255, 255, 255);
   pdf.setFontSize(u(43));
   const titleLines = pdf.splitTextToSize(documentTitle, contentWidth - u(80)).slice(0, 2);
-  centeredLines(pdf, titleLines, width / 2, headerY + u(103), u(43));
+  centeredLines(pdf, titleLines, width / 2, headerY + (meta.length ? u(103) : u(92)), u(43));
 
   if (subtitle) {
     pdf.setTextColor(220, 228, 234);
     pdf.setFontSize(u(18));
-    pdf.text(subtitle, width / 2, headerY + u(182), { align: 'center', maxWidth: contentWidth - u(100) });
+    pdf.text(subtitle, width / 2, headerY + (meta.length ? u(182) : u(154)), { align: 'center', maxWidth: contentWidth - u(100) });
   }
   if (meta.length) {
     pdf.setTextColor(...gold);
@@ -113,7 +114,7 @@ function drawPage(pdf, node, size, brand, pageNumber, pageCount) {
     pdf.text(meta.join('  •  '), width / 2, headerY + u(214), { align: 'center', maxWidth: contentWidth - u(90) });
   }
 
-  const tableY = headerY + headerH + u(31);
+  const tableY = headerY + headerH + (meta.length ? u(31) : u(22));
   const footerH = u(54);
   const footerY = height - margin - footerH;
   const availableH = footerY - tableY - u(24);
