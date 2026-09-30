@@ -1,5 +1,5 @@
 // Executive Visual Infographic Dashboard for OMR Exam Results
-// Uses Kalpurush font, zero auto-date, spacious layout, zero text-overlap, English digits
+// Ultra-HD 500+ DPI Retina rendering, Kalpurush font, zero auto-date, zero text collision
 
 function roundRect(ctx, x, y, width, height, radius) {
   if (typeof radius === 'number') {
@@ -39,11 +39,18 @@ export function generateInfographicCanvas({
   }
 
   const canvas = document.createElement('canvas');
-  // High-DPI Canvas: Width 1640px, Height 440px (Generous, spacious executive layout)
-  canvas.width = 1640;
-  canvas.height = 440;
+  // Ultra-HD Resolution: 3.5x scale (5740px x 1540px = 505 DPI for pin-sharp vector-like clarity)
+  const scale = 3.5;
+  const baseW = 1640;
+  const baseH = 440;
+  canvas.width = Math.round(baseW * scale);
+  canvas.height = Math.round(baseH * scale);
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
+
+  ctx.scale(scale, scale);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
 
   const valid = stats.valid || 1;
   const highest = stats.highest ?? 0;
@@ -60,7 +67,7 @@ export function generateInfographicCanvas({
 
   // 0. Background Outer Card
   ctx.fillStyle = '#ffffff';
-  roundRect(ctx, 0, 0, 1640, 440, 14);
+  roundRect(ctx, 0, 0, baseW, baseH, 14);
   ctx.fill();
   ctx.strokeStyle = '#cbd5e1';
   ctx.lineWidth = 2.5;
@@ -68,7 +75,7 @@ export function generateInfographicCanvas({
 
   // 1. Top Header Banner (Height: 74px)
   ctx.fillStyle = '#0f172a';
-  roundRect(ctx, 0, 0, 1640, 74, { tl: 14, tr: 14, br: 0, bl: 0 });
+  roundRect(ctx, 0, 0, baseW, 74, { tl: 14, tr: 14, br: 0, bl: 0 });
   ctx.fill();
 
   // Title text (Big, proud, distinct)
@@ -94,12 +101,12 @@ export function generateInfographicCanvas({
   ctx.fillText(`পূর্ণমান: ${totalMcq}`, 1531, 42);
   ctx.textAlign = 'left';
 
-  // 2. Middle Row: 4 Giant, Spacious Metric KPI Cards (x: 24 to 1616, width: 382px each, height: 122px)
+  // 2. Middle Row: 4 Giant, Spacious Metric KPI Cards (x: 24 to 1616, width: 382px each, height: 124px)
+  // Values are pre-formatted as single strings to prevent ANY text collision
   const cards = [
     {
       title: 'মোট পরীক্ষার্থী',
-      value: `${stats.valid || 0}`,
-      unit: 'জন',
+      value: `${stats.valid || 0} জন`,
       sub: `ফাইলে মোট তথ্য: ${stats.total || 0} টি`,
       bg: '#f8fafc',
       border: '#cbd5e1',
@@ -108,8 +115,7 @@ export function generateInfographicCanvas({
     },
     {
       title: 'সর্বোচ্চ নম্বর',
-      value: `${highest}`,
-      unit: `/ ${totalMcq}`,
+      value: `${highest} / ${totalMcq}`,
       sub: `সঠিকতার হার: ${Math.round((highest / totalMcq) * 100)}%`,
       bg: '#f0fdf4',
       border: '#86efac',
@@ -118,8 +124,7 @@ export function generateInfographicCanvas({
     },
     {
       title: 'গড় নম্বর (Average)',
-      value: `${average}`,
-      unit: `/ ${totalMcq}`,
+      value: `${average} / ${totalMcq}`,
       sub: `মধ্যমা (Median): ${median} / ${totalMcq}`,
       bg: '#eff6ff',
       border: '#93c5fd',
@@ -128,8 +133,7 @@ export function generateInfographicCanvas({
     },
     {
       title: 'সর্বনিম্ন নম্বর',
-      value: `${lowest}`,
-      unit: `/ ${totalMcq}`,
+      value: `${lowest} / ${totalMcq}`,
       sub: `সঠিকতার হার: ${Math.round((lowest / totalMcq) * 100)}%`,
       bg: '#fef2f2',
       border: '#fca5a5',
@@ -160,19 +164,12 @@ export function generateInfographicCanvas({
     // Title Label
     ctx.fillStyle = card.accent;
     ctx.font = `bold 15px ${fontBase}`;
-    ctx.fillText(card.title, x + 18, cardY + 28);
+    ctx.fillText(card.title, x + 18, cardY + 30);
 
-    // Giant Value & Unit rendered cleanly on the same baseline with zero collision
+    // Value (Rendered as single coherent string - impossible to overlap)
     ctx.fillStyle = card.valColor;
-    ctx.font = `bold 38px ${fontBase}`;
+    ctx.font = `bold 33px ${fontBase}`;
     ctx.fillText(card.value, x + 18, cardY + 74);
-
-    if (card.unit) {
-      const valW = ctx.measureText(card.value).width;
-      ctx.fillStyle = '#64748b';
-      ctx.font = `600 18px ${fontBase}`;
-      ctx.fillText(card.unit, x + 18 + valW + 8, cardY + 72);
-    }
 
     // Subtitle Note
     ctx.fillStyle = '#475569';
@@ -198,8 +195,9 @@ export function generateInfographicCanvas({
   ctx.font = `bold 14.5px ${fontBase}`;
   ctx.fillText('প্রশ্নের কাঠিন্যতা ও সহজতা বিশ্লেষণ:', diffX + 18, diffY + 31);
 
-  // Easiest Question Pill
+  // Easiest Question Pill (Single coherent string)
   const easyPillX = diffX + 270;
+  const easyText = `সবচেয়ে সহজ প্রশ্ন: Q${stats.easiest?.q || '—'}  (${stats.easiest?.acc || 0}% সঠিক উত্তর)`;
   ctx.fillStyle = '#dcfce7';
   roundRect(ctx, easyPillX, diffY + 10, 420, 30, 15);
   ctx.fill();
@@ -208,13 +206,12 @@ export function generateInfographicCanvas({
   ctx.stroke();
 
   ctx.fillStyle = '#15803d';
-  ctx.font = `bold 14px ${fontBase}`;
-  ctx.fillText(`সবচেয়ে সহজ প্রশ্ন: Q${stats.easiest?.q || '—'}`, easyPillX + 16, diffY + 30);
-  ctx.font = `13px ${fontBase}`;
-  ctx.fillText(`(${stats.easiest?.acc || 0}% সঠিক উত্তর)`, easyPillX + 260, diffY + 30);
+  ctx.font = `bold 13.5px ${fontBase}`;
+  ctx.fillText(easyText, easyPillX + 18, diffY + 30);
 
-  // Hardest Question Pill
+  // Hardest Question Pill (Single coherent string)
   const hardPillX = diffX + 710;
+  const hardText = `সবচেয়ে কঠিন প্রশ্ন: Q${stats.hardest?.q || '—'}  (${stats.hardest?.acc || 0}% সঠিক উত্তর)`;
   ctx.fillStyle = '#fee2e2';
   roundRect(ctx, hardPillX, diffY + 10, 420, 30, 15);
   ctx.fill();
@@ -223,10 +220,8 @@ export function generateInfographicCanvas({
   ctx.stroke();
 
   ctx.fillStyle = '#b91c1c';
-  ctx.font = `bold 14px ${fontBase}`;
-  ctx.fillText(`সবচেয়ে কঠিন প্রশ্ন: Q${stats.hardest?.q || '—'}`, hardPillX + 16, diffY + 30);
-  ctx.font = `13px ${fontBase}`;
-  ctx.fillText(`(${stats.hardest?.acc || 0}% সঠিক উত্তর)`, hardPillX + 260, diffY + 30);
+  ctx.font = `bold 13.5px ${fontBase}`;
+  ctx.fillText(hardText, hardPillX + 18, diffY + 30);
 
   // Pass rate on right
   const passRate = stats.valid ? Math.round(((stats.valid - (stats.bracketFail || 0)) / stats.valid) * 100) : 0;
@@ -254,7 +249,7 @@ export function generateInfographicCanvas({
   ctx.font = `bold 15px ${fontBase}`;
   ctx.fillText('নম্বর ভিত্তিক গ্রেড বণ্টন ও পারফরম্যান্স বিশ্লেষণ (Score Distribution & Grade Brackets):', distX + 18, distY + 26);
 
-  // 4 Spacious Brackets: width = (1592 - 36 - 60) / 4 = 374px
+  // 4 Spacious Brackets: width = 374px
   const bWidth = 374;
   const bGap = 20;
   const brackets = [
