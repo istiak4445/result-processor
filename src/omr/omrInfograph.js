@@ -39,8 +39,8 @@ export function generateInfographicCanvas({
   }
 
   const canvas = document.createElement('canvas');
-  // Ultra-HD Resolution: 3.5x scale (5740px x 1540px = 505 DPI for pin-sharp vector-like clarity)
-  const scale = 3.5;
+  // High-DPI Resolution: 2x scale (3280px x 880px = ~288 DPI crisp print quality, lightweight memory)
+  const scale = 2.0;
   const baseW = 1640;
   const baseH = 440;
   canvas.width = Math.round(baseW * scale);

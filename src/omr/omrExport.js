@@ -125,7 +125,7 @@ export function exportOmrPdf({
   });
   if (canvas) {
     try {
-      infographicDataUrl = canvas.toDataURL('image/png', 1.0);
+      infographicDataUrl = canvas.toDataURL('image/jpeg', 0.88);
     } catch (e) {
       console.warn('Could not generate canvas data URL:', e);
     }
@@ -157,8 +157,8 @@ export function exportOmrPdf({
     columnStyles,
     didDrawPage: data => {
       if (data.pageNumber === 1 && infographicDataUrl) {
-        // Draw the Ultra-HD Retina Infographic Dashboard covering top of page 1 (~215 pt height)
-        doc.addImage(infographicDataUrl, 'PNG', margin, 10, usableWidth, 215, undefined, 'NONE');
+        // Draw the crisp Infographic Dashboard covering top of page 1 (~215 pt height)
+        doc.addImage(infographicDataUrl, 'JPEG', margin, 10, usableWidth, 215, undefined, 'FAST');
       } else {
         // Subsequent pages: Sleek compact top banner to maximize rows per page
         doc.setFont('helvetica', 'bold');
