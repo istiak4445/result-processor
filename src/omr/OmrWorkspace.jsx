@@ -366,75 +366,75 @@ export default function OmrWorkspace({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <TrendingUp size={18} color="#0284c7" />
-              <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#0f172a', margin: 0 }}>Exam Analytics & Score Breakdown</h3>
+              <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#0f172a', margin: 0 }}>পরীক্ষার সার্বিক ফলাফল ও পরিসংখ্যান বিশ্লেষণ</h3>
             </div>
             <div style={{ display: 'flex', gap: '15px', fontSize: '12px', fontWeight: '600' }}>
-              <span style={{ color: '#16a34a' }}>Easiest: Q{processed.stats?.easiest?.q || '—'} ({processed.stats?.easiest?.acc || 0}% correct)</span>
-              <span style={{ color: '#dc2626' }}>Hardest: Q{processed.stats?.hardest?.q || '—'} ({processed.stats?.hardest?.acc || 0}% correct)</span>
+              <span style={{ color: '#16a34a' }}>সবচেয়ে সহজ: Q{processed.stats?.easiest?.q || '—'} ({processed.stats?.easiest?.acc || 0}% সঠিক উত্তর)</span>
+              <span style={{ color: '#dc2626' }}>সবচেয়ে কঠিন: Q{processed.stats?.hardest?.q || '—'} ({processed.stats?.hardest?.acc || 0}% সঠিক উত্তর)</span>
             </div>
           </div>
 
           {/* Key Stat Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px', marginBottom: '16px' }}>
             <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '11.5px', color: '#64748b', fontWeight: '500' }}>Total Examinees</div>
+              <div style={{ fontSize: '11.5px', color: '#64748b', fontWeight: '500' }}>মোট পরীক্ষার্থী</div>
               <div style={{ fontSize: '20px', fontWeight: '800', color: '#0f172a' }}>{processed.stats?.valid || 0}</div>
-              <div style={{ fontSize: '11px', color: '#94a3b8' }}>{processed.stats?.total || 0} total rows in file</div>
+              <div style={{ fontSize: '11px', color: '#94a3b8' }}>ফাইলে মোট তথ্য: {processed.stats?.total || 0} টি</div>
             </div>
             <div style={{ background: '#f0fdf4', padding: '10px 14px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
-              <div style={{ fontSize: '11.5px', color: '#166534', fontWeight: '500' }}>Highest Score</div>
+              <div style={{ fontSize: '11.5px', color: '#166534', fontWeight: '500' }}>সর্বোচ্চ নম্বর</div>
               <div style={{ fontSize: '20px', fontWeight: '800', color: '#15803d' }}>{processed.stats?.highest || 0} <span style={{ fontSize: '13px', fontWeight: '600' }}>/ {totalMcq}</span></div>
-              <div style={{ fontSize: '11px', color: '#16a34a' }}>{Math.round(((processed.stats?.highest || 0) / totalMcq) * 100)}% accuracy</div>
+              <div style={{ fontSize: '11px', color: '#16a34a' }}>সঠিকতার হার: {Math.round(((processed.stats?.highest || 0) / totalMcq) * 100)}%</div>
             </div>
             <div style={{ background: '#eff6ff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
-              <div style={{ fontSize: '11.5px', color: '#1e40af', fontWeight: '500' }}>Class Average</div>
+              <div style={{ fontSize: '11.5px', color: '#1e40af', fontWeight: '500' }}>গড় নম্বর (Average)</div>
               <div style={{ fontSize: '20px', fontWeight: '800', color: '#1d4ed8' }}>{processed.stats?.average || 0} <span style={{ fontSize: '13px', fontWeight: '600' }}>/ {totalMcq}</span></div>
-              <div style={{ fontSize: '11px', color: '#3b82f6' }}>Median: {processed.stats?.median || 0}</div>
+              <div style={{ fontSize: '11px', color: '#3b82f6' }}>মধ্যমা (Median): {processed.stats?.median || 0}</div>
             </div>
             <div style={{ background: '#fef2f2', padding: '10px 14px', borderRadius: '8px', border: '1px solid #fecaca' }}>
-              <div style={{ fontSize: '11.5px', color: '#991b1b', fontWeight: '500' }}>Lowest Score</div>
+              <div style={{ fontSize: '11.5px', color: '#991b1b', fontWeight: '500' }}>সর্বনিম্ন নম্বর</div>
               <div style={{ fontSize: '20px', fontWeight: '800', color: '#b91c1c' }}>{processed.stats?.lowest || 0} <span style={{ fontSize: '13px', fontWeight: '600' }}>/ {totalMcq}</span></div>
-              <div style={{ fontSize: '11px', color: '#dc2626' }}>{Math.round(((processed.stats?.lowest || 0) / totalMcq) * 100)}% accuracy</div>
+              <div style={{ fontSize: '11px', color: '#dc2626' }}>সঠিকতার হার: {Math.round(((processed.stats?.lowest || 0) / totalMcq) * 100)}%</div>
             </div>
             {(sources.students || sources.web) && (
               <div style={{ background: '#faf5ff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e9d5ff' }}>
-                <div style={{ fontSize: '11.5px', color: '#6b21a8', fontWeight: '500' }}>Not in Students</div>
+                <div style={{ fontSize: '11.5px', color: '#6b21a8', fontWeight: '500' }}>তালিকা বহির্ভূত রোল</div>
                 <div style={{ fontSize: '20px', fontWeight: '800', color: '#7e22ce' }}>{processed.stats?.excluded || 0}</div>
-                <div style={{ fontSize: '11px', color: '#a855f7' }}>Excluded from result</div>
+                <div style={{ fontSize: '11px', color: '#a855f7' }}>ফলাফল তালিকা থেকে বাদ</div>
               </div>
             )}
             <div style={{ background: '#fffbeb', padding: '10px 14px', borderRadius: '8px', border: '1px solid #fde68a' }}>
-              <div style={{ fontSize: '11.5px', color: '#92400e', fontWeight: '500' }}>Flagged Issues</div>
+              <div style={{ fontSize: '11.5px', color: '#92400e', fontWeight: '500' }}>পর্যালোচনা প্রয়োজন</div>
               <div style={{ fontSize: '20px', fontWeight: '800', color: '#b45309' }}>{processed.issues?.length || 0}</div>
-              <div style={{ fontSize: '11px', color: '#d97706' }}>Invalid / Duplicates</div>
+              <div style={{ fontSize: '11px', color: '#d97706' }}>ভুল বা ডুপ্লিকেট রোল</div>
             </div>
           </div>
 
           {/* Visual Score Distribution Brackets */}
           <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
             <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>
-              Score Distribution & Performance Brackets:
+              নম্বর ভিত্তিক গ্রেড বণ্টন ও মেধা বিশ্লেষণ:
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
                 <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#16a34a' }}></span>
                 <span style={{ fontWeight: '600', color: '#0f172a' }}>80% - 100% (A+)</span>
-                <span style={{ marginLeft: 'auto', fontWeight: '700', color: '#16a34a' }}>{processed.stats?.bracketA || 0} ({processed.stats?.valid ? Math.round(((processed.stats?.bracketA || 0) / processed.stats.valid) * 100) : 0}%)</span>
+                <span style={{ marginLeft: 'auto', fontWeight: '700', color: '#16a34a' }}>{processed.stats?.bracketA || 0} জন ({processed.stats?.valid ? Math.round(((processed.stats?.bracketA || 0) / processed.stats.valid) * 100) : 0}%)</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
                 <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#2563eb' }}></span>
                 <span style={{ fontWeight: '600', color: '#0f172a' }}>60% - 79% (A/B)</span>
-                <span style={{ marginLeft: 'auto', fontWeight: '700', color: '#2563eb' }}>{processed.stats?.bracketB || 0} ({processed.stats?.valid ? Math.round(((processed.stats?.bracketB || 0) / processed.stats.valid) * 100) : 0}%)</span>
+                <span style={{ marginLeft: 'auto', fontWeight: '700', color: '#2563eb' }}>{processed.stats?.bracketB || 0} জন ({processed.stats?.valid ? Math.round(((processed.stats?.bracketB || 0) / processed.stats.valid) * 100) : 0}%)</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
                 <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#d97706' }}></span>
-                <span style={{ fontWeight: '600', color: '#0f172a' }}>40% - 59% (Pass)</span>
-                <span style={{ marginLeft: 'auto', fontWeight: '700', color: '#d97706' }}>{processed.stats?.bracketC || 0} ({processed.stats?.valid ? Math.round(((processed.stats?.bracketC || 0) / processed.stats.valid) * 100) : 0}%)</span>
+                <span style={{ fontWeight: '600', color: '#0f172a' }}>40% - 59% (উত্তীর্ণ)</span>
+                <span style={{ marginLeft: 'auto', fontWeight: '700', color: '#d97706' }}>{processed.stats?.bracketC || 0} জন ({processed.stats?.valid ? Math.round(((processed.stats?.bracketC || 0) / processed.stats.valid) * 100) : 0}%)</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
                 <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#dc2626' }}></span>
-                <span style={{ fontWeight: '600', color: '#0f172a' }}>&lt; 40% (Fail)</span>
-                <span style={{ marginLeft: 'auto', fontWeight: '700', color: '#dc2626' }}>{processed.stats?.bracketFail || 0} ({processed.stats?.valid ? Math.round(((processed.stats?.bracketFail || 0) / processed.stats.valid) * 100) : 0}%)</span>
+                <span style={{ fontWeight: '600', color: '#0f172a' }}>&lt; 40% (অনুত্তীর্ণ)</span>
+                <span style={{ marginLeft: 'auto', fontWeight: '700', color: '#dc2626' }}>{processed.stats?.bracketFail || 0} জন ({processed.stats?.valid ? Math.round(((processed.stats?.bracketFail || 0) / processed.stats.valid) * 100) : 0}%)</span>
               </div>
             </div>
           </div>
