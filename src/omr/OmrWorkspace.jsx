@@ -12,7 +12,10 @@ import {
   Sparkles,
   RotateCcw,
   Eye,
-  Check
+  Check,
+  Users,
+  TrendingUp,
+  BarChart3
 } from 'lucide-react';
 import { parseAnswerKey, parseOmrMatrix, autoDetectAnswerKey } from './omrParser.js';
 import { processOmrData } from './omrProcessor.js';
@@ -50,7 +53,13 @@ const SAMPLE_KEY = `28 offline
 29. A
 30. B`;
 
-export default function OmrWorkspace({ sources = {} }) {
+export default function OmrWorkspace({
+  sources = {},
+  onFile,
+  savedSheets = [],
+  activeSavedId = '',
+  selectSaved
+}) {
   const [omrData, setOmrData] = useState(null);
   const [fileName, setFileName] = useState('');
   const [examTitle, setExamTitle] = useState('');
@@ -147,15 +156,15 @@ export default function OmrWorkspace({ sources = {} }) {
             Cleans raw OMR exports, bridges student roster matching, grades responses against Answer Key, and exports compact searchable PDF & Excel.
           </p>
         </div>
-        {sources.students && (
+        {(sources.web?.linked || sources.students) && (
           <div style={{ background: '#0f172a', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', color: '#38bdf8' }}>
-            <CheckCircle2 size={16} /> Roster matched with active Student sheet
+            <CheckCircle2 size={16} /> Roster connected: {sources.web?.linked ? sources.web.workbookTitle : sources.students?.fileName}
           </div>
         )}
       </div>
 
-      {/* Two Column Setup: File Upload & Answer Key */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+      {/* Setup Panels: OMR File, Answer Key, and Student Roster */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '20px' }}>
         {/* Panel 1: Upload OMR File */}
         <div style={{ background: 'white', padding: '18px', borderRadius: '10px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
@@ -270,30 +279,164 @@ export default function OmrWorkspace({ sources = {} }) {
             </button>
           </div>
         </div>
+
+        {/* Panel 3: Student Names Roster */}
+        <div style={{ background: 'white', padding: '18px', borderRadius: '10px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Users size={18} color="#8b5cf6" />
+              <h3 style={{ fontSize: '15px', fontWeight: '600', margin: 0 }}>3. Student Names Roster</h3>
+            </div>
+            <span style={{
+              fontSize: '11px',
+              fontWeight: '700',
+              padding: '3px 8px',
+              borderRadius: '12px',
+              background: (sources.web?.linked || sources.students) ? '#dcfce7' : '#f1f5f9',
+              color: (sources.web?.linked || sources.students) ? '#15803d' : '#64748b'
+            }}>
+              {(sources.web?.linked || sources.students) ? 'Connected' : 'Optional'}
+            </span>
+          </div>
+
+          {(sources.web?.linked || sources.students) ? (
+            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px 12px', borderRadius: '8px', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#16a34a', fontWeight: '600', fontSize: '13px' }}>
+                <CheckCircle2 size={16} /> {sources.web?.linked ? sources.web.workbookTitle : sources.students?.fileName}
+              </div>
+              <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>
+                {sources.web?.rows?.length || sources.students?.rows?.length || 0} registered students available
+              </div>
+            </div>
+          ) : (
+            <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 10px 0', lineHeight: '1.4' }}>
+              Connect a roster to automatically replace roll numbers with student names in exports.
+            </p>
+          )}
+
+          {/* Database Selector if saved Google Sheets exist */}
+          {savedSheets && savedSheets.length > 0 && (
+            <div style={{ marginBottom: '10px' }}>
+              <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569', display: 'block', marginBottom: '4px' }}>
+                Choose Saved Google Sheet:
+              </label>
+              <select
+                value={activeSavedId}
+                onChange={(e) => selectSaved && selectSaved(e.target.value)}
+                style={{ width: '100%', padding: '7px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12.5px' }}
+              >
+                <option value="">Select Google Sheet database...</option>
+                {savedSheets.map((s) => (
+                  <option key={s.id} value={s.id}>{s.title}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Upload Students File */}
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            padding: '10px',
+            border: '1px dashed #cbd5e1',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            background: '#f8fafc',
+            fontSize: '12px',
+            fontWeight: '600',
+            color: '#334155'
+          }}>
+            <Upload size={15} color="#64748b" />
+            <span>{sources.students ? 'Change Students sheet (.xlsx/.csv)' : 'Upload Students sheet (.xlsx/.csv)'}</span>
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              style={{ display: 'none' }}
+              onChange={(e) => e.target.files[0] && onFile && onFile(e.target.files[0], 'students')}
+            />
+          </label>
+        </div>
       </div>
 
-      {/* Metrics Banner */}
+      {/* Comprehensive Exam Analytics & Stat Bar */}
       {omrData && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-          <div style={{ background: 'white', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b' }}>Total Rows</div>
-            <div style={{ fontSize: '20px', fontWeight: '700', color: '#0f172a' }}>{processed.stats?.total || 0}</div>
+        <div style={{ background: 'white', borderRadius: '10px', border: '1px solid #e2e8f0', padding: '16px 20px', marginBottom: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <TrendingUp size={18} color="#0284c7" />
+              <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#0f172a', margin: 0 }}>Exam Analytics & Score Breakdown</h3>
+            </div>
+            <div style={{ display: 'flex', gap: '15px', fontSize: '12px', fontWeight: '600' }}>
+              <span style={{ color: '#16a34a' }}>Easiest: Q{processed.stats?.easiest?.q || '—'} ({processed.stats?.easiest?.acc || 0}% correct)</span>
+              <span style={{ color: '#dc2626' }}>Hardest: Q{processed.stats?.hardest?.q || '—'} ({processed.stats?.hardest?.acc || 0}% correct)</span>
+            </div>
           </div>
-          <div style={{ background: 'white', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b' }}>Valid Examinees</div>
-            <div style={{ fontSize: '20px', fontWeight: '700', color: '#16a34a' }}>{processed.stats?.valid || 0}</div>
+
+          {/* Key Stat Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+            <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: '11.5px', color: '#64748b', fontWeight: '500' }}>Total Examinees</div>
+              <div style={{ fontSize: '20px', fontWeight: '800', color: '#0f172a' }}>{processed.stats?.valid || 0}</div>
+              <div style={{ fontSize: '11px', color: '#94a3b8' }}>{processed.stats?.total || 0} total rows in file</div>
+            </div>
+            <div style={{ background: '#f0fdf4', padding: '10px 14px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+              <div style={{ fontSize: '11.5px', color: '#166534', fontWeight: '500' }}>Highest Score</div>
+              <div style={{ fontSize: '20px', fontWeight: '800', color: '#15803d' }}>{processed.stats?.highest || 0} <span style={{ fontSize: '13px', fontWeight: '600' }}>/ {totalMcq}</span></div>
+              <div style={{ fontSize: '11px', color: '#16a34a' }}>{Math.round(((processed.stats?.highest || 0) / totalMcq) * 100)}% accuracy</div>
+            </div>
+            <div style={{ background: '#eff6ff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+              <div style={{ fontSize: '11.5px', color: '#1e40af', fontWeight: '500' }}>Class Average</div>
+              <div style={{ fontSize: '20px', fontWeight: '800', color: '#1d4ed8' }}>{processed.stats?.average || 0} <span style={{ fontSize: '13px', fontWeight: '600' }}>/ {totalMcq}</span></div>
+              <div style={{ fontSize: '11px', color: '#3b82f6' }}>Median: {processed.stats?.median || 0}</div>
+            </div>
+            <div style={{ background: '#fef2f2', padding: '10px 14px', borderRadius: '8px', border: '1px solid #fecaca' }}>
+              <div style={{ fontSize: '11.5px', color: '#991b1b', fontWeight: '500' }}>Lowest Score</div>
+              <div style={{ fontSize: '20px', fontWeight: '800', color: '#b91c1c' }}>{processed.stats?.lowest || 0} <span style={{ fontSize: '13px', fontWeight: '600' }}>/ {totalMcq}</span></div>
+              <div style={{ fontSize: '11px', color: '#dc2626' }}>{Math.round(((processed.stats?.lowest || 0) / totalMcq) * 100)}% accuracy</div>
+            </div>
+            {(sources.students || sources.web) && (
+              <div style={{ background: '#faf5ff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e9d5ff' }}>
+                <div style={{ fontSize: '11.5px', color: '#6b21a8', fontWeight: '500' }}>Not in Students</div>
+                <div style={{ fontSize: '20px', fontWeight: '800', color: '#7e22ce' }}>{processed.stats?.excluded || 0}</div>
+                <div style={{ fontSize: '11px', color: '#a855f7' }}>Excluded from result</div>
+              </div>
+            )}
+            <div style={{ background: '#fffbeb', padding: '10px 14px', borderRadius: '8px', border: '1px solid #fde68a' }}>
+              <div style={{ fontSize: '11.5px', color: '#92400e', fontWeight: '500' }}>Flagged Issues</div>
+              <div style={{ fontSize: '20px', fontWeight: '800', color: '#b45309' }}>{processed.issues?.length || 0}</div>
+              <div style={{ fontSize: '11px', color: '#d97706' }}>Invalid / Duplicates</div>
+            </div>
           </div>
-          <div style={{ background: 'white', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b' }}>Flagged / N/A</div>
-            <div style={{ fontSize: '20px', fontWeight: '700', color: '#dc2626' }}>{processed.issues?.length || 0}</div>
-          </div>
-          <div style={{ background: 'white', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b' }}>Highest Score</div>
-            <div style={{ fontSize: '20px', fontWeight: '700', color: '#0284c7' }}>{processed.stats?.highest || 0} / {totalMcq}</div>
-          </div>
-          <div style={{ background: 'white', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '12px', color: '#64748b' }}>Class Average</div>
-            <div style={{ fontSize: '20px', fontWeight: '700', color: '#8b5cf6' }}>{processed.stats?.average || 0}</div>
+
+          {/* Visual Score Distribution Brackets */}
+          <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '8px' }}>
+              Score Distribution & Performance Brackets:
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#16a34a' }}></span>
+                <span style={{ fontWeight: '600', color: '#0f172a' }}>80% - 100% (A+)</span>
+                <span style={{ marginLeft: 'auto', fontWeight: '700', color: '#16a34a' }}>{processed.stats?.bracketA || 0} ({processed.stats?.valid ? Math.round(((processed.stats?.bracketA || 0) / processed.stats.valid) * 100) : 0}%)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#2563eb' }}></span>
+                <span style={{ fontWeight: '600', color: '#0f172a' }}>60% - 79% (A/B)</span>
+                <span style={{ marginLeft: 'auto', fontWeight: '700', color: '#2563eb' }}>{processed.stats?.bracketB || 0} ({processed.stats?.valid ? Math.round(((processed.stats?.bracketB || 0) / processed.stats.valid) * 100) : 0}%)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#d97706' }}></span>
+                <span style={{ fontWeight: '600', color: '#0f172a' }}>40% - 59% (Pass)</span>
+                <span style={{ marginLeft: 'auto', fontWeight: '700', color: '#d97706' }}>{processed.stats?.bracketC || 0} ({processed.stats?.valid ? Math.round(((processed.stats?.bracketC || 0) / processed.stats.valid) * 100) : 0}%)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#dc2626' }}></span>
+                <span style={{ fontWeight: '600', color: '#0f172a' }}>&lt; 40% (Fail)</span>
+                <span style={{ marginLeft: 'auto', fontWeight: '700', color: '#dc2626' }}>{processed.stats?.bracketFail || 0} ({processed.stats?.valid ? Math.round(((processed.stats?.bracketFail || 0) / processed.stats.valid) * 100) : 0}%)</span>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -398,7 +541,8 @@ export default function OmrWorkspace({ sources = {} }) {
                   totalMcq,
                   examTitle,
                   fileName,
-                  issues: processed.issues
+                  issues: processed.issues,
+                  stats: processed.stats
                 });
               }}
               style={{
@@ -429,12 +573,12 @@ export default function OmrWorkspace({ sources = {} }) {
           <div style={{ background: '#f8fafc', padding: '8px 16px', borderBottom: '1px solid #e2e8f0', display: 'flex', gap: '20px', fontSize: '11px', fontWeight: '600', alignItems: 'center' }}>
             <span style={{ color: '#64748b' }}>Color Legend:</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span style={{ width: '14px', height: '14px', background: '#d1fae5', border: '1px solid #86efac', borderRadius: '3px', display: 'inline-block' }}></span>
-              <span style={{ color: '#065f46' }}>Correct Answer (✓)</span>
+              <span style={{ width: '14px', height: '14px', background: '#dcfce7', border: '1px solid #86efac', borderRadius: '3px', display: 'inline-block' }}></span>
+              <span style={{ color: '#15803d' }}>Correct Answer (✓)</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span style={{ width: '14px', height: '14px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '3px', display: 'inline-block' }}></span>
-              <span style={{ color: '#991b1b' }}>Wrong Answer (✗)</span>
+              <span style={{ width: '14px', height: '14px', background: '#fca5a5', border: '1px solid #f87171', borderRadius: '3px', display: 'inline-block' }}></span>
+              <span style={{ color: '#7f1d1d', fontWeight: '700' }}>Wrong Answer (✗)</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
               <span style={{ width: '14px', height: '14px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '3px', display: 'inline-block' }}></span>
@@ -482,14 +626,14 @@ export default function OmrWorkspace({ sources = {} }) {
                       let bg = '#f1f5f9';
                       let color = '#94a3b8';
                       if (ans.isCorrect) {
-                        bg = '#d1fae5';
-                        color = '#065f46';
+                        bg = '#dcfce7';
+                        color = '#15803d';
                       } else if (ans.isWrong) {
-                        bg = '#fee2e2';
-                        color = '#991b1b';
+                        bg = '#fca5a5';
+                        color = '#7f1d1d';
                       } else if (ans.isInvalid) {
-                        bg = '#ffedd5';
-                        color = '#c2410c';
+                        bg = '#fed7aa';
+                        color = '#9a3412';
                       }
                       return (
                         <td

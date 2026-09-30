@@ -88,14 +88,14 @@ export function exportOmrPdf({
       let textColor = [148, 163, 184];
 
       if (ans.isCorrect) {
-        fillColor = [209, 250, 229]; // Soft Green
-        textColor = [6, 95, 70];
+        fillColor = [220, 252, 231]; // Clean Soft Mint Green (#dcfce7)
+        textColor = [22, 101, 52];   // Forest Green (#166534)
       } else if (ans.isWrong) {
-        fillColor = [254, 226, 226]; // Soft Red
-        textColor = [153, 27, 27];
+        fillColor = [254, 165, 165]; // High-Contrast Rose/Red (#fca5a5) - instantly stands out
+        textColor = [127, 29, 29];   // Deep Dark Crimson (#7f1d1d)
       } else if (ans.isInvalid) {
-        fillColor = [255, 237, 213]; // Soft Amber
-        textColor = [194, 65, 12];
+        fillColor = [254, 215, 170]; // Warning Amber Orange (#fed7aa)
+        textColor = [154, 52, 18];
       }
 
       row.push({
@@ -117,7 +117,7 @@ export function exportOmrPdf({
   const displayDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
   autoTable(doc, {
-    startY: 38,
+    startY: 46,
     margin: { left: margin, right: margin, top: 12, bottom: 24 },
     head: [headRow],
     body: bodyRows,
@@ -139,19 +139,30 @@ export function exportOmrPdf({
     },
     columnStyles,
     didDrawPage: data => {
-      // Header Banner
+      // Header Banner - Line 1: Title
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(13);
+      doc.setFontSize(12);
       doc.setTextColor(15, 23, 42);
-      doc.text(titleText, margin, 18);
+      doc.text(titleText, margin, 16);
 
+      // Header Banner - Line 2: Core Stats
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(
+        `Examinees: ${stats.valid || results.length} · Full Marks: ${totalMcq} · Highest: ${stats.highest ?? '—'} · Average: ${stats.average ?? '—'} · Median: ${stats.median ?? '—'} · Lowest: ${stats.lowest ?? '—'} · Date: ${displayDate}`,
+        margin,
+        28
+      );
+
+      // Header Banner - Line 3: Score Breakdown & Insights
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.2);
       doc.setTextColor(100, 116, 139);
       doc.text(
-        `Examinees: ${stats.valid || results.length} · Full Marks: ${totalMcq} · Highest: ${stats.highest || '—'} · Date: ${displayDate}`,
+        `Performance: 80%+ [${stats.bracketA || 0}] · 60-79% [${stats.bracketB || 0}] · 40-59% [${stats.bracketC || 0}] · <40% [${stats.bracketFail || 0}]  ·  Hardest: Q${stats.hardest?.q || '—'} (${stats.hardest?.acc || 0}% correct) · Easiest: Q${stats.easiest?.q || '—'} (${stats.easiest?.acc || 0}% correct)`,
         margin,
-        30
+        38
       );
 
       // Footer Banner
@@ -159,7 +170,7 @@ export function exportOmrPdf({
       doc.setFontSize(7.5);
       doc.setTextColor(100, 116, 139);
       doc.text(
-        'Color Legend: [Green: Correct ✓]  [Red: Wrong ✗]  [Gray: Blank —]  [Orange: Invalid ⚠]  ·  Searchable Vector PDF (Ctrl+F to search)',
+        'Color Legend: [Green: Correct]  [Red: Wrong]  [Gray: Blank -]  [Orange: Invalid !]  ·  Searchable Vector PDF (Ctrl+F to search)',
         margin,
         pageHeight - 10
       );
@@ -176,11 +187,45 @@ export function exportOmrXlsx({
   totalMcq = 30,
   examTitle = 'OMR Result',
   fileName = 'OMR_Result',
-  issues = []
+  issues = [],
+  stats = {}
 }) {
   const wb = XLSX.utils.book_new();
 
-  // 1. Detailed MCQ Breakdown Sheet
+  // 1. Executive Summary & Analytics Sheet
+  const analyticsRows = [
+    { Metric: 'Exam Title', Value: examTitle },
+    { Metric: 'Total Questions (Full Marks)', Value: totalMcq },
+    { Metric: 'Total Processed Examinees', Value: stats.valid || results.length },
+    { Metric: 'Highest Score', Value: `${stats.highest ?? 0} / ${totalMcq}` },
+    { Metric: 'Average Score', Value: stats.average ?? 0 },
+    { Metric: 'Median Score', Value: stats.median ?? 0 },
+    { Metric: 'Lowest Score', Value: `${stats.lowest ?? 0} / ${totalMcq}` },
+    { Metric: '', Value: '' },
+    { Metric: '--- SCORE DISTRIBUTION ---', Value: '' },
+    { Metric: '80% - 100% (A+ / Excellent)', Value: stats.bracketA ?? 0 },
+    { Metric: '60% - 79% (A/B / Good)', Value: stats.bracketB ?? 0 },
+    { Metric: '40% - 59% (Pass)', Value: stats.bracketC ?? 0 },
+    { Metric: '< 40% (Fail)', Value: stats.bracketFail ?? 0 },
+    { Metric: '', Value: '' },
+    { Metric: '--- QUESTION DIFFICULTY ---', Value: '' },
+    { Metric: 'Easiest Question', Value: `Q${stats.easiest?.q || '—'} (${stats.easiest?.acc || 0}% correct)` },
+    { Metric: 'Hardest Question', Value: `Q${stats.hardest?.q || '—'} (${stats.hardest?.acc || 0}% correct)` }
+  ];
+
+  if (stats.questionAccuracy) {
+    analyticsRows.push({ Metric: '', Value: '' });
+    analyticsRows.push({ Metric: '--- QUESTION-BY-QUESTION SUCCESS RATE ---', Value: '' });
+    for (let q = 1; q <= totalMcq; q++) {
+      analyticsRows.push({ Metric: `Question ${q}`, Value: `${stats.questionAccuracy[q] || 0}% correct` });
+    }
+  }
+
+  const wsAnalytics = XLSX.utils.json_to_sheet(analyticsRows);
+  wsAnalytics['!cols'] = [{ wch: 38 }, { wch: 32 }];
+  XLSX.utils.book_append_sheet(wb, wsAnalytics, 'Exam Analytics');
+
+  // 2. Detailed MCQ Breakdown Sheet
   const detailedData = results.map(r => {
     const row = {
       Rank: r.rank ?? '',
@@ -195,7 +240,7 @@ export function exportOmrXlsx({
     };
 
     for (let q = 1; q <= totalMcq; q++) {
-      const ans = r.answers?.[q] || { studentAns: '—' };
+      const ans = r.answers?.[q] || { studentAns: '-' };
       row[`Q${q}`] = ans.studentAns;
     }
     return row;
@@ -203,7 +248,7 @@ export function exportOmrXlsx({
 
   const wsDetailed = XLSX.utils.json_to_sheet(detailedData);
 
-  // Set column widths for Sheet 1
+  // Set column widths for Sheet 2
   const colWidths = [
     { wch: 6 },  // Rank
     { wch: 12 }, // Roll
@@ -222,7 +267,7 @@ export function exportOmrXlsx({
   wsDetailed['!cols'] = colWidths;
   XLSX.utils.book_append_sheet(wb, wsDetailed, 'MCQ Breakdown');
 
-  // 2. Merit Summary Sheet
+  // 3. Merit Summary Sheet
   const meritData = results.map(r => ({
     Rank: r.rank ?? '',
     Roll: r.roll ?? '',
@@ -238,7 +283,7 @@ export function exportOmrXlsx({
   wsMerit['!cols'] = colWidths.slice(0, 9);
   XLSX.utils.book_append_sheet(wb, wsMerit, 'Merit List');
 
-  // 3. Audit Issues Sheet (if any)
+  // 4. Audit Issues Sheet (if any)
   if (issues && issues.length > 0) {
     const wsIssues = XLSX.utils.json_to_sheet(issues);
     XLSX.utils.book_append_sheet(wb, wsIssues, 'Audit Issues');

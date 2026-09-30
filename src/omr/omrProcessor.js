@@ -1,5 +1,5 @@
 // Bridges existing normalizeRoll and roster mapping from rollLogic.js
-import { normalizeRoll, makeMap } from '../rollLogic.js';
+import { normalizeRoll, makeMap, sourceValue } from '../rollLogic.js';
 
 export function processOmrData({ omrData, answerKeyMap = {}, sources = {}, totalMcq = 0 }) {
   if (!omrData || !omrData.rows || !omrData.rows.length) {
@@ -7,8 +7,9 @@ export function processOmrData({ omrData, answerKeyMap = {}, sources = {}, total
   }
 
   // Bridge student and web sheets if available in sources
-  const sMap = sources.students ? makeMap(sources.students) : { map: new Map() };
-  const wMap = sources.web ? makeMap(sources.web) : { map: new Map() };
+  const sMap = sources.students ? makeMap(sources.students) : { map: new Map(), duplicates: new Set(), invalid: [] };
+  const wMap = sources.web ? makeMap(sources.web) : { map: new Map(), duplicates: new Set(), invalid: [] };
+  const hasRoster = !!sources.students || !!sources.web;
 
   // Detect total questions
   const qCols = omrData.questionColumns || [];
@@ -45,17 +46,46 @@ export function processOmrData({ omrData, answerKeyMap = {}, sources = {}, total
         type: 'Duplicate Roll',
         roll: norm.normalized,
         rowNumber: row._rowIndex || idx + 1,
-        detail: `Row ${row._rowIndex || idx + 1}: Duplicate roll found in sheet`
+        detail: `Row ${row._rowIndex || idx + 1}: Duplicate roll found in exam sheet`
       });
     }
 
-    // Match student name from bridged student / web maps
+    // Match student and web roster exactly as in main.jsx processSources
     const studentRecord = norm.valid ? sMap.map.get(norm.normalized) : null;
     const webRecord = norm.valid ? wMap.map.get(norm.normalized) : null;
+    const isEnrolled = !!studentRecord || !!webRecord;
+
+    // Check duplicate in Students sheet or Web Roll (same as main.jsx)
+    if (norm.valid && sMap.duplicates.has(norm.normalized)) {
+      issues.push({
+        type: 'Duplicate roll',
+        roll: norm.normalized,
+        rowNumber: row._rowIndex || idx + 1,
+        detail: 'Repeated exam roll in Students sheet'
+      });
+    }
+    if (norm.valid && wMap.duplicates.has(norm.normalized)) {
+      issues.push({
+        type: 'Duplicate roll',
+        roll: norm.normalized,
+        rowNumber: row._rowIndex || idx + 1,
+        detail: 'Repeated exam roll in Web Roll'
+      });
+    }
+
+    // Flag Not in Students if roster is present but roll is not found (same as main.jsx)
+    if (norm.valid && hasRoster && !isEnrolled) {
+      issues.push({
+        type: 'Not in Students',
+        roll: norm.normalized,
+        rowNumber: row._rowIndex || idx + 1,
+        detail: `Row ${row._rowIndex || idx + 1}: No match in Students${sources.web ? ' or valid Web Roll' : ''}`
+      });
+    }
     
-    // Extract name from roster or fallback
-    const studentName = (webRecord?.row?.[sources.web?.mapping?.name]) ||
-                        (studentRecord?.row?.[sources.students?.mapping?.name]) ||
+    // Extract name following exact priority: Web Roll > Students Sheet > OMR row Name
+    const studentName = sourceValue(webRecord, sources.web, 'name') ||
+                        sourceValue(studentRecord, sources.students, 'name') ||
                         row['Student Name'] ||
                         row['Name'] ||
                         row['name'] ||
@@ -78,11 +108,11 @@ export function processOmrData({ omrData, answerKeyMap = {}, sources = {}, total
 
       if (!rawAns || rawAns === 'EMPTY' || rawAns === 'BLANK' || rawAns === 'NULL') {
         status = 'BLANK';
-        studentAns = '—';
+        studentAns = '-';
         blankCount++;
       } else if (rawAns === 'INVALID' || rawAns === 'DOUBLE' || rawAns === 'MULTIPLE') {
         status = 'INVALID';
-        studentAns = '⚠';
+        studentAns = '!';
         invalidCount++;
       } else if (keyAns && rawAns === keyAns) {
         status = 'CORRECT';
@@ -115,11 +145,23 @@ export function processOmrData({ omrData, answerKeyMap = {}, sources = {}, total
     const finalBlank = hasKey ? blankCount : Number(row.Empty ?? row.empty ?? blankCount);
     const accuracy = numQuestions > 0 ? Math.round((finalCorrect / numQuestions) * 100) : 0;
 
+    // If roster is provided, flag and exclude rolls not in roster (exactly like main.jsx)
+    if (hasRoster && !isEnrolled) {
+      issues.push({
+        type: 'Not in Students',
+        roll: norm.valid ? norm.normalized : rawRoll,
+        rowNumber: row._rowIndex || idx + 1,
+        detail: `Row ${row._rowIndex || idx + 1}: No match in Students${sources.web ? ' or valid Web Roll' : ''} (Excluded from final result)`
+      });
+      return; // Exclude from final results list
+    }
+
     results.push({
       _id: idx,
       roll: norm.valid ? norm.normalized : rawRoll,
       rawRoll,
       isValidRoll: norm.valid,
+      isEnrolled,
       name: studentName,
       score: finalScore,
       correct: finalCorrect,
@@ -137,7 +179,6 @@ export function processOmrData({ omrData, answerKeyMap = {}, sources = {}, total
 
   // Dense ranking: sort by score descending, then roll ascending
   const sorted = [...results].sort((a, b) => {
-    // Valid rolls first, then higher scores
     if (a.isValidRoll && !b.isValidRoll) return -1;
     if (!a.isValidRoll && b.isValidRoll) return 1;
     if (b.score !== a.score) return b.score - a.score;
@@ -158,21 +199,57 @@ export function processOmrData({ omrData, answerKeyMap = {}, sources = {}, total
     item.rank = currentRank;
   });
 
-  // Calculate statistics
+  // Calculate comprehensive statistics
   const validResults = sorted.filter(r => r.isValidRoll);
-  const totalScore = validResults.reduce((acc, r) => acc + (r.score || 0), 0);
-  const highest = validResults.length ? Math.max(...validResults.map(r => r.score)) : 0;
-  const average = validResults.length ? (totalScore / validResults.length).toFixed(1) : 0;
+  const scores = validResults.map(r => r.score).sort((a, b) => a - b);
+  const totalScore = scores.reduce((acc, s) => acc + s, 0);
+  const highest = scores.length ? scores[scores.length - 1] : 0;
+  const lowest = scores.length ? scores[0] : 0;
+  const average = scores.length ? (totalScore / scores.length).toFixed(1) : 0;
+  const median = scores.length
+    ? (scores.length % 2 === 0
+        ? ((scores[scores.length / 2 - 1] + scores[scores.length / 2]) / 2).toFixed(1)
+        : scores[Math.floor(scores.length / 2)])
+    : 0;
+
+  // Grade Breakdown
+  const bracketA = validResults.filter(r => (r.score / numQuestions) >= 0.8).length; // 80%+
+  const bracketB = validResults.filter(r => (r.score / numQuestions) >= 0.6 && (r.score / numQuestions) < 0.8).length; // 60-79%
+  const bracketC = validResults.filter(r => (r.score / numQuestions) >= 0.4 && (r.score / numQuestions) < 0.6).length; // 40-59%
+  const bracketFail = validResults.filter(r => (r.score / numQuestions) < 0.4).length; // < 40%
+
+  // Question-by-question breakdown & hardest/easiest questions
+  const questionAccuracy = {};
+  let hardest = { q: 1, acc: 100 };
+  let easiest = { q: 1, acc: 0 };
+
+  for (let q = 1; q <= numQuestions; q++) {
+    const cor = validResults.filter(r => r.answers?.[q]?.isCorrect).length;
+    const acc = validResults.length ? Math.round((cor / validResults.length) * 100) : 0;
+    questionAccuracy[q] = acc;
+    if (acc < hardest.acc) hardest = { q, acc };
+    if (acc > easiest.acc) easiest = { q, acc };
+  }
 
   return {
     results: sorted,
     issues,
     stats: {
-      total: results.length,
+      total: omrData.rows.length,
       valid: validResults.length,
+      excluded: issues.filter(i => i.type === 'Not in Students').length,
       invalid: issues.filter(i => i.type === 'Invalid Roll').length,
       highest,
+      lowest,
       average,
+      median,
+      bracketA,
+      bracketB,
+      bracketC,
+      bracketFail,
+      hardest,
+      easiest,
+      questionAccuracy,
       totalQuestions: numQuestions
     }
   };
