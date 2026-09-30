@@ -152,8 +152,7 @@ export default function OmrWorkspace({
     const canvas = generateInfographicCanvas({
       stats: processed.stats,
       totalMcq,
-      examTitle: examTitle || fileName || 'OMR Exam Result',
-      dateStr: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+      examTitle: examTitle || fileName || 'OMR Exam Result'
     });
     return canvas ? canvas.toDataURL('image/png', 0.95) : null;
   }, [omrData, processed.stats, totalMcq, examTitle, fileName]);
@@ -162,8 +161,7 @@ export default function OmrWorkspace({
     const canvas = generateInfographicCanvas({
       stats: processed.stats,
       totalMcq,
-      examTitle: examTitle || fileName || 'OMR Exam Result',
-      dateStr: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+      examTitle: examTitle || fileName || 'OMR Exam Result'
     });
     if (canvas) {
       downloadInfographicImage(canvas, `${fileName || 'OMR'}_Analytics_Infograph`);

@@ -115,15 +115,13 @@ export function exportOmrPdf({
   });
 
   const titleText = examTitle || 'Examination Results & MCQ Breakdown';
-  const displayDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
-  // Generate visual infographic dashboard canvas for Page 1
+  // Generate visual infographic dashboard canvas for Page 1 (No auto-date)
   let infographicDataUrl = null;
   const canvas = generateInfographicCanvas({
     stats,
     totalMcq,
-    examTitle: titleText,
-    dateStr: displayDate
+    examTitle: titleText
   });
   if (canvas) {
     try {
@@ -133,7 +131,7 @@ export function exportOmrPdf({
     }
   }
 
-  const startY = infographicDataUrl ? 170 : 46;
+  const startY = infographicDataUrl ? 232 : 46;
 
   autoTable(doc, {
     startY,
@@ -159,8 +157,8 @@ export function exportOmrPdf({
     columnStyles,
     didDrawPage: data => {
       if (data.pageNumber === 1 && infographicDataUrl) {
-        // Draw the HD Infographic Dashboard covering top of page 1 (~152 pt height)
-        doc.addImage(infographicDataUrl, 'PNG', margin, 10, usableWidth, 152, undefined, 'FAST');
+        // Draw the HD Infographic Dashboard covering top of page 1 (~215 pt height)
+        doc.addImage(infographicDataUrl, 'PNG', margin, 10, usableWidth, 215, undefined, 'FAST');
       } else {
         // Subsequent pages: Sleek compact top banner to maximize rows per page
         doc.setFont('helvetica', 'bold');
@@ -172,7 +170,7 @@ export function exportOmrPdf({
         doc.setFontSize(7.5);
         doc.setTextColor(100, 116, 139);
         doc.text(
-          `Examinees: ${stats.valid || results.length} · Full Marks: ${totalMcq} · Highest: ${stats.highest ?? '—'} · Average: ${stats.average ?? '—'} · Date: ${displayDate}`,
+          `Examinees: ${stats.valid || results.length} · Full Marks: ${totalMcq} · Highest: ${stats.highest ?? '—'} · Average: ${stats.average ?? '—'}`,
           pageWidth - margin - 220,
           15
         );
