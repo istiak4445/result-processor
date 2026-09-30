@@ -90,14 +90,17 @@ export default function OmrWorkspace({
         setExamTitle(parsed.examTitle);
       }
 
-      // Check for auto-detected key if key field is empty
-      if (!keyText.trim()) {
+      // Check for auto-detected key if key field is empty or sample key
+      if (!keyText.trim() || keyText === SAMPLE_KEY) {
         const detected = autoDetectAnswerKey(parsed.rows, parsed.questionColumns);
-        if (detected) {
+        if (detected && Object.keys(detected.keyMap).length > 0) {
           const autoKeyStr = Object.entries(detected.keyMap)
             .map(([q, ans]) => `${q}. ${ans}`)
             .join('\n');
-          setKeyText(`Auto-detected Key (From Roll ${detected.detectedFromRoll})\n${autoKeyStr}`);
+          const headerTitle = detected.detectedFromRoll
+            ? `Auto-detected Key (${detected.method ? `${detected.method} · ` : ''}Roll: ${detected.detectedFromRoll})`
+            : 'Auto-detected Key';
+          setKeyText(`${headerTitle}\n${autoKeyStr}`);
         }
       }
     } catch (err) {
@@ -136,14 +139,21 @@ export default function OmrWorkspace({
 
   // Auto-detect Key action
   const handleAutoDetect = () => {
-    if (!omrData) return;
+    if (!omrData || !omrData.rows?.length) {
+      alert('দয়া করে প্রথমে ওএমআর (OMR) ফাইলটি আপলোড করুন।');
+      return;
+    }
     const detected = autoDetectAnswerKey(omrData.rows, omrData.questionColumns);
-    if (detected) {
+    if (detected && Object.keys(detected.keyMap).length > 0) {
       const autoKeyStr = Object.entries(detected.keyMap)
         .map(([q, ans]) => `${q}. ${ans}`)
         .join('\n');
+      const headerTitle = detected.detectedFromRoll
+        ? `Auto-detected Key (${detected.method ? `${detected.method} · ` : ''}Roll: ${detected.detectedFromRoll})`
+        : 'Auto-detected Key';
+      setKeyText(`${headerTitle}\n${autoKeyStr}`);
     } else {
-      alert('Could not find a student with 100% score to auto-detect the answer key. Please paste the answer key manually.');
+      alert('ওএমআর ফাইল থেকে উত্তরপত্র স্বয়ংক্রিয়ভাবে শনাক্ত করা সম্ভব হয়নি। দয়া করে উত্তরপত্রটি সরাসরি পেস্ট করুন।');
     }
   };
 
@@ -291,9 +301,10 @@ export default function OmrWorkspace({
             </button>
             <button
               onClick={handleAutoDetect}
-              style={{ padding: '6px 12px', fontSize: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+              title="Detect answer key from Master Key row, top scorers, or class consensus"
+              style={{ padding: '6px 12px', fontSize: '12px', borderRadius: '6px', border: '1px solid #f59e0b', background: '#fffbeb', color: '#92400e', fontWeight: '500', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
             >
-              <Sparkles size={13} color="#d97706" /> Auto-detect from Perfect Scorer
+              <Sparkles size={13} color="#d97706" /> Auto-detect Key
             </button>
             <button
               onClick={() => setKeyText('')}

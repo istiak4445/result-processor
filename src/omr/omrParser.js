@@ -58,28 +58,166 @@ export function parseAnswerKey(rawText) {
 }
 
 export function autoDetectAnswerKey(omrRows, questionColumns) {
-  // If there are students with full marks, or find the highest scoring student
   if (!omrRows || !omrRows.length || !questionColumns || !questionColumns.length) {
     return null;
   }
 
+  const numQ = questionColumns.length;
+
+  const getAns = (row, col) => {
+    const val = String(row[col] ?? '').trim().toUpperCase();
+    return /^[A-D]$/.test(val) ? val : '';
+  };
+
+  // Strategy 1: Check for explicit "Answer Key" or "Master" row
+  const masterRow = omrRows.find(r => {
+    const roll = String(r['Roll Number'] || r.Roll || r.roll || '').trim().toLowerCase();
+    const name = String(r['Student Name'] || r.Name || r.name || '').trim().toLowerCase();
+    return /key|master|answer|correct|template|^0+$/.test(roll) || /key|master|answer|correct|template/.test(name);
+  });
+
+  if (masterRow) {
+    const keyMap = {};
+    let count = 0;
+    questionColumns.forEach((qCol, idx) => {
+      const qNum = idx + 1;
+      const ans = getAns(masterRow, qCol);
+      if (ans) {
+        keyMap[qNum] = ans;
+        count++;
+      }
+    });
+    if (count >= Math.min(5, numQ)) {
+      return { keyMap, totalQuestions: count, method: 'Master Key Row', detectedFromRoll: masterRow['Roll Number'] || masterRow.Roll || 'Key' };
+    }
+  }
+
+  // Helper to extract score / correct count
+  const getScoreInfo = (r) => {
+    let score = -1;
+    let correct = -1;
+    let wrong = 0;
+
+    for (const [k, v] of Object.entries(r)) {
+      if (k.startsWith('_')) continue;
+      const lower = k.toLowerCase().trim();
+      const num = Number(v);
+      if (Number.isFinite(num)) {
+        if (/^(score|marks?|total|total marks|obtained)$/.test(lower) && score === -1) {
+          score = num;
+        } else if (/^(correct|right)$/.test(lower) && correct === -1) {
+          correct = num;
+        } else if (/^(wrong|incorrect)$/.test(lower)) {
+          wrong = num;
+        }
+      }
+    }
+
+    if (correct === -1 && score !== -1 && score <= numQ) correct = score;
+    if (score === -1 && correct !== -1) score = correct;
+
+    return { score, correct, wrong };
+  };
+
+  // Strategy 2: Look for 100% perfect scorer
   const perfect = omrRows.find(r => {
-    const score = Number(r.Score ?? r.score);
-    const correct = Number(r.Correct ?? r.correct);
-    const wrong = Number(r.Wrong ?? r.wrong);
-    return Number.isFinite(score) && correct === questionColumns.length && wrong === 0;
+    const { score, correct, wrong } = getScoreInfo(r);
+    return (correct === numQ && wrong === 0) || (score === numQ && wrong === 0);
   });
 
   if (perfect) {
     const keyMap = {};
     questionColumns.forEach((qCol, idx) => {
       const qNum = idx + 1;
-      const ans = String(perfect[qCol] ?? '').trim().toUpperCase();
-      if (/^[A-D]$/.test(ans)) {
-        keyMap[qNum] = ans;
-      }
+      const ans = getAns(perfect, qCol);
+      if (ans) keyMap[qNum] = ans;
     });
-    return { keyMap, totalQuestions: questionColumns.length, detectedFromRoll: perfect['Roll Number'] || perfect.roll };
+    if (Object.keys(keyMap).length > 0) {
+      const roll = perfect['Roll Number'] || perfect.Roll || perfect.roll || 'Perfect Scorer';
+      return { keyMap, totalQuestions: Object.keys(keyMap).length, method: '100% Scorer', detectedFromRoll: roll };
+    }
+  }
+
+  // Strategy 3: Find highest scorers and use consensus among top performers
+  const scoredRows = omrRows
+    .map(r => ({ row: r, ...getScoreInfo(r) }))
+    .filter(item => item.correct > 0 || item.score > 0)
+    .sort((a, b) => Math.max(b.correct, b.score) - Math.max(a.correct, a.score));
+
+  if (scoredRows.length > 0) {
+    const topScorer = scoredRows[0];
+    const topScore = Math.max(topScorer.correct, topScorer.score);
+
+    if (topScore >= Math.floor(numQ * 0.5)) {
+      const topCohort = scoredRows.filter(s => Math.max(s.correct, s.score) >= topScore - 2);
+      const keyMap = {};
+
+      questionColumns.forEach((qCol, idx) => {
+        const qNum = idx + 1;
+        const votes = { A: 0, B: 0, C: 0, D: 0 };
+        topCohort.forEach(({ row }) => {
+          const ans = getAns(row, qCol);
+          if (ans && votes[ans] !== undefined) {
+            votes[ans]++;
+          }
+        });
+        let bestAns = '';
+        let maxVotes = 0;
+        for (const [ans, count] of Object.entries(votes)) {
+          if (count > maxVotes) {
+            maxVotes = count;
+            bestAns = ans;
+          }
+        }
+        if (bestAns) {
+          keyMap[qNum] = bestAns;
+        } else {
+          const topAns = getAns(topScorer.row, qCol);
+          if (topAns) keyMap[qNum] = topAns;
+        }
+      });
+
+      if (Object.keys(keyMap).length > 0) {
+        const roll = topScorer.row['Roll Number'] || topScorer.row.Roll || topScorer.row.roll;
+        return {
+          keyMap,
+          totalQuestions: Object.keys(keyMap).length,
+          method: topScore === numQ ? '100% Scorer' : `Top Scorer (Score: ${topScore}/${numQ})`,
+          detectedFromRoll: roll || 'Top Scorer'
+        };
+      }
+    }
+  }
+
+  // Strategy 4: Universal Consensus Voting
+  const keyMap = {};
+  questionColumns.forEach((qCol, idx) => {
+    const qNum = idx + 1;
+    const votes = { A: 0, B: 0, C: 0, D: 0 };
+    omrRows.forEach(row => {
+      const ans = getAns(row, qCol);
+      if (ans && votes[ans] !== undefined) votes[ans]++;
+    });
+    let bestAns = '';
+    let maxVotes = 0;
+    for (const [ans, count] of Object.entries(votes)) {
+      if (count > maxVotes) {
+        maxVotes = count;
+        bestAns = ans;
+      }
+    }
+    if (bestAns && maxVotes > 0) {
+      keyMap[qNum] = bestAns;
+    }
+  });
+
+  if (Object.keys(keyMap).length >= Math.min(5, numQ)) {
+    return {
+      keyMap,
+      totalQuestions: Object.keys(keyMap).length,
+      method: 'Majority Response Consensus',
+      detectedFromRoll: 'Class Consensus'
+    };
   }
 
   return null;
