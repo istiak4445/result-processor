@@ -21,6 +21,7 @@ import { parseAnswerKey, parseOmrMatrix, autoDetectAnswerKey } from './omrParser
 import { processOmrData } from './omrProcessor.js';
 import { exportOmrPdf, exportOmrXlsx } from './omrExport.js';
 import { generateInfographicCanvas, downloadInfographicImage } from './omrInfograph.js';
+import { safeExportName } from '../exportName.js';
 
 const SAMPLE_KEY = `28 offline 
 1. B
@@ -164,7 +165,8 @@ export default function OmrWorkspace({
       examTitle: examTitle || fileName || 'OMR Exam Result'
     });
     if (canvas) {
-      downloadInfographicImage(canvas, `${fileName || 'OMR'}_Analytics_Infograph`);
+      const baseName = safeExportName(fileName || examTitle || 'OMR_Exam');
+      downloadInfographicImage(canvas, `${baseName} - Detailed Analytics Infograph`);
     }
   };
 
@@ -573,7 +575,7 @@ export default function OmrWorkspace({
                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
               }}
             >
-              <Download size={15} /> Export Searchable PDF (A4)
+              <Download size={15} /> Export Detailed PDF (A4)
             </button>
 
             <button
@@ -602,7 +604,7 @@ export default function OmrWorkspace({
                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
               }}
             >
-              <FileSpreadsheet size={15} /> Export Excel (.xlsx)
+              <FileSpreadsheet size={15} /> Export Detailed Excel (.xlsx)
             </button>
           </div>
         </div>
