@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { safeExportName } from '../exportName.js';
+import { generateInfographicCanvas } from './omrInfograph.js';
 
 export function exportOmrPdf({
   results = [],
@@ -116,9 +117,27 @@ export function exportOmrPdf({
   const titleText = examTitle || 'Examination Results & MCQ Breakdown';
   const displayDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
+  // Generate visual infographic dashboard canvas for Page 1
+  let infographicDataUrl = null;
+  const canvas = generateInfographicCanvas({
+    stats,
+    totalMcq,
+    examTitle: titleText,
+    dateStr: displayDate
+  });
+  if (canvas) {
+    try {
+      infographicDataUrl = canvas.toDataURL('image/png', 0.95);
+    } catch (e) {
+      console.warn('Could not generate canvas data URL:', e);
+    }
+  }
+
+  const startY = infographicDataUrl ? 170 : 46;
+
   autoTable(doc, {
-    startY: 46,
-    margin: { left: margin, right: margin, top: 12, bottom: 24 },
+    startY,
+    margin: { left: margin, right: margin, top: 22, bottom: 24 },
     head: [headRow],
     body: bodyRows,
     theme: 'grid',
@@ -139,33 +158,27 @@ export function exportOmrPdf({
     },
     columnStyles,
     didDrawPage: data => {
-      // Header Banner - Line 1: Title
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
-      doc.setTextColor(15, 23, 42);
-      doc.text(titleText, margin, 16);
+      if (data.pageNumber === 1 && infographicDataUrl) {
+        // Draw the HD Infographic Dashboard covering top of page 1 (~152 pt height)
+        doc.addImage(infographicDataUrl, 'PNG', margin, 10, usableWidth, 152, undefined, 'FAST');
+      } else {
+        // Subsequent pages: Sleek compact top banner to maximize rows per page
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9.5);
+        doc.setTextColor(15, 23, 42);
+        doc.text(`${titleText} · Results`, margin, 15);
 
-      // Header Banner - Line 2: Core Stats
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(51, 65, 85);
-      doc.text(
-        `Examinees: ${stats.valid || results.length} · Full Marks: ${totalMcq} · Highest: ${stats.highest ?? '—'} · Average: ${stats.average ?? '—'} · Median: ${stats.median ?? '—'} · Lowest: ${stats.lowest ?? '—'} · Date: ${displayDate}`,
-        margin,
-        28
-      );
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(100, 116, 139);
+        doc.text(
+          `Examinees: ${stats.valid || results.length} · Full Marks: ${totalMcq} · Highest: ${stats.highest ?? '—'} · Average: ${stats.average ?? '—'} · Date: ${displayDate}`,
+          pageWidth - margin - 220,
+          15
+        );
+      }
 
-      // Header Banner - Line 3: Score Breakdown & Insights
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.2);
-      doc.setTextColor(100, 116, 139);
-      doc.text(
-        `Performance: 80%+ [${stats.bracketA || 0}] · 60-79% [${stats.bracketB || 0}] · 40-59% [${stats.bracketC || 0}] · <40% [${stats.bracketFail || 0}]  ·  Hardest: Q${stats.hardest?.q || '—'} (${stats.hardest?.acc || 0}% correct) · Easiest: Q${stats.easiest?.q || '—'} (${stats.easiest?.acc || 0}% correct)`,
-        margin,
-        38
-      );
-
-      // Footer Banner
+      // Footer Banner on all pages
       const pageStr = `Page ${doc.internal.getNumberOfPages()}`;
       doc.setFontSize(7.5);
       doc.setTextColor(100, 116, 139);

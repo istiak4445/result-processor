@@ -20,6 +20,7 @@ import {
 import { parseAnswerKey, parseOmrMatrix, autoDetectAnswerKey } from './omrParser.js';
 import { processOmrData } from './omrProcessor.js';
 import { exportOmrPdf, exportOmrXlsx } from './omrExport.js';
+import { generateInfographicCanvas, downloadInfographicImage } from './omrInfograph.js';
 
 const SAMPLE_KEY = `28 offline 
 1. B
@@ -140,9 +141,32 @@ export default function OmrWorkspace({
       const autoKeyStr = Object.entries(detected.keyMap)
         .map(([q, ans]) => `${q}. ${ans}`)
         .join('\n');
-      setKeyText(`Auto-detected Key\n${autoKeyStr}`);
     } else {
       alert('Could not find a student with 100% score to auto-detect the answer key. Please paste the answer key manually.');
+    }
+  };
+
+  // Live Infographic Canvas Generator
+  const infographDataUrl = useMemo(() => {
+    if (!omrData || typeof document === 'undefined') return null;
+    const canvas = generateInfographicCanvas({
+      stats: processed.stats,
+      totalMcq,
+      examTitle: examTitle || fileName || 'OMR Exam Result',
+      dateStr: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    });
+    return canvas ? canvas.toDataURL('image/png', 0.95) : null;
+  }, [omrData, processed.stats, totalMcq, examTitle, fileName]);
+
+  const handleDownloadGraph = () => {
+    const canvas = generateInfographicCanvas({
+      stats: processed.stats,
+      totalMcq,
+      examTitle: examTitle || fileName || 'OMR Exam Result',
+      dateStr: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    });
+    if (canvas) {
+      downloadInfographicImage(canvas, `${fileName || 'OMR'}_Analytics_Infograph`);
     }
   };
 
@@ -505,7 +529,27 @@ export default function OmrWorkspace({
           </div>
 
           {/* Export Actions */}
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <button
+              onClick={handleDownloadGraph}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '8px 16px',
+                background: '#2563eb',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '13px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                boxShadow: '0 2px 4px rgba(37,99,235,0.2)'
+              }}
+            >
+              <BarChart3 size={15} /> গ্রাফ ইমেজ (HD PNG)
+            </button>
+
             <button
               onClick={() => {
                 exportOmrPdf({
@@ -562,6 +606,43 @@ export default function OmrWorkspace({
             >
               <FileSpreadsheet size={15} /> Export Excel (.xlsx)
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Visual Infographic & Performance Graph Preview */}
+      {omrData && infographDataUrl && (
+        <div style={{ background: 'white', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '18px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <div style={{ background: '#0f172a', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'white', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: '600' }}>
+              <BarChart3 size={16} color="#38bdf8" />
+              <span>ভিজ্যুয়াল ইনফোগ্রাফিক ও পারফরম্যান্স গ্রাফ (PDF-এর প্রথম পাতায় স্বয়ংক্রিয়ভাবে যুক্ত হবে)</span>
+            </div>
+            <button
+              onClick={handleDownloadGraph}
+              style={{
+                background: '#2563eb',
+                color: 'white',
+                border: 'none',
+                padding: '6px 14px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <Download size={14} /> গ্রাফ ইমেজ ডাউনলোড (HD PNG)
+            </button>
+          </div>
+          <div style={{ padding: '14px', background: '#f8fafc', display: 'flex', justifyContent: 'center' }}>
+            <img
+              src={infographDataUrl}
+              alt="Exam Analytics Infographic"
+              style={{ width: '100%', maxWidth: '1200px', height: 'auto', borderRadius: '6px', border: '1px solid #cbd5e1', boxShadow: '0 2px 4px rgba(0,0,0,0.06)' }}
+            />
           </div>
         </div>
       )}

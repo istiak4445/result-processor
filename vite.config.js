@@ -1,7 +1,11 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import tailwindcss from '@tailwindcss/vite';
+
+let tailwindcss;
+try {
+  tailwindcss = (await import('@tailwindcss/vite')).default;
+} catch {}
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), ...(tailwindcss ? [tailwindcss()] : [])],
 });
