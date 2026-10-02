@@ -26,3 +26,6 @@ main.image-workspace-active{max-width:none;padding:0}
 .database-picker input{width:100%;box-sizing:border-box;border:1px solid #d7d0e2;border-radius:9px;background:#fff;padding:11px 12px;font-weight:600;color:#352f48}
 .cq-upload-note{margin:12px 0 0;padding:10px 13px;border:1px solid #cdebd9;border-radius:10px;background:#f2fbf6;color:#52705e;font-size:11px;line-height:1.5}.cq-upload-note b{color:#26734b;margin-right:4px}
 .mapping-head{display:flex!important;grid-template-columns:none!important;align-items:center;justify-content:space-between;gap:10px;margin:0!important}.mapping-head b{font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mapping-head button{border:0;border-radius:7px;background:#fff0ef;color:#a33d35;padding:5px 8px;font-size:9px;cursor:pointer;flex:0 0 auto}
+.highest-kept-cell{background:#f0fdf4!important;color:#15803d!important;font-weight:700}
+.discarded-cell{background:#fffbeb!important;color:#b45309!important}
+.preview-search-bar input:focus{border-color:#0284c7!important;box-shadow:0 0 0 2px rgba(2,132,199,0.18)!important}
