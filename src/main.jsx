@@ -445,6 +445,17 @@ async function loadGoogleSheet(url,{save=false,preferredTab='',knownTitle=''}={}
    const list=tab==='results'?rawDataset:tab==='cq'?processed.cqRecovery:tab==='issues'?processed.issues:processed.audit;
    return list.filter(r=>Object.values(r).some(v=>String(v??'').toLowerCase().includes('duplicate'))).length;
  },[tab,rawDataset,processed.cqRecovery,processed.issues,processed.audit]);
+ const rawMcqRows=sources.mcq?.rows?.length||0;
+ const rawCqRows=sources.cq?.rows?.length||0;
+ const rawManualRows=sources.manual?.rows?.length||0;
+ const totalRawExamEntries=rawMcqRows+rawManualRows+(rawMcqRows===0?rawCqRows:0);
+ const totalIssuesCount=processed.issues.length;
+ const invalidCount=processed.issues.filter(x=>/invalid|roll missing/i.test(x.type)).length;
+ const duplicateCount=processed.issues.filter(x=>/duplicate/i.test(x.type)).length;
+ const notInRosterCount=processed.issues.filter(x=>x.type==='Not in Students').length;
+ const missingInfoCount=processed.issues.filter(x=>/missing/i.test(x.type)&&!/roll missing/i.test(x.type)).length;
+ const finalRankedCount=processed.results.filter(r=>r.rank!==null).length;
+ const finalWithScoresCount=processed.results.filter(r=>r.total!==null).length;
  return <><header><div className="brand"><span>RF</span><div><b>ResultFlow</b><small>Exam processing workspace</small></div></div><nav className="workspace-tabs" aria-label="Workspace"><button className={workspaceTab==='processor'?'active':''} onClick={()=>setWorkspaceTab('processor')}>Result Processor</button><button className={workspaceTab==='omr'?'active':''} onClick={()=>setWorkspaceTab('omr')}>OMR Result Cleaner</button><button className={workspaceTab==='image'?'active':''} onClick={()=>setWorkspaceTab('image')}>Image Maker{processed.results.length>0&&<em>{processed.results.length}</em>}</button></nav><div className="security"><ShieldCheck size={17}/> Original files are never edited</div></header>
  <main className={workspaceTab==='image'?'image-workspace-active':workspaceTab==='omr'?'omr-workspace-active':''}><div className={workspaceTab==='processor'?'processor-workspace':'workspace-hidden'}><section className="hero"><div><span className="eyebrow">NEW PROCESSING SESSION</span><h1>Turn raw exam sheets into a<br/><i>clean, ranked result.</i></h1><p>Upload each source, verify the detected columns, inspect mismatches, then export. Rolls are normalized automatically whenever matching needs it.</p></div><div className="pipeline"><b>Processing pipeline</b>{['Normalize rolls','Exact-match web data','Merge MCQ + CQ','Dense rank'].map((x,i)=><span key={x}><em>{i+1}</em>{x}{i<3&&<ArrowRight size={14}/>}</span>)}</div></section>
  {error&&<div className="error"><XCircle size={18}/>{error}</div>}
@@ -462,7 +473,122 @@ async function loadGoogleSheet(url,{save=false,preferredTab='',knownTitle=''}={}
  <section className="panel"><div className="section-title"><div><span>02</span><h2>Verify detected columns</h2></div><p>Headers are auto-detected even when they are not on row 1. CQ files may use different formats.</p></div>{Object.values(sources).length?<div className="mapping-grid">{Object.entries(sources).filter(([type])=>!['cq','cqFiles'].includes(type)).map(([type,source])=><Mapping key={type} source={source} onChange={mapping}/>)}{(sources.cqFiles||(sources.cq?[sources.cq]:[])).map((source,index)=><Mapping key={`cq-${index}-${source.fileName}`} source={source} index={index} onChange={mapping} onRemove={removeCqFile}/>)}</div>:<div className="empty">Upload a source to see its detected headers.</div>}</section>
  <section className="panel"><div className="section-title"><div><span>03</span><h2>Validation & result preview</h2></div><p>{complete?'Processing is ready. Review every warning before export.':'Students and MCQ sheets are required for uploaded results. CQ is optional enrichment.'}</p></div>
  {complete&&<div className="processing-banner"><CheckCircle2 size={22}/><div><b>Result preview is ready</b><small>{processed.results.length} exam rolls processed · {processed.results.filter(r=>r.rank!==null).length} ranked · {processed.issues.length} issues</small></div><button onClick={()=>setTab('results')}>View final result</button></div>}
- <div className="metrics"><div><b>{processed.results.length}</b><span>Exam rolls processed</span></div><div><b>{processed.issues.length}</b><span>Issues to review</span></div><div><b>{processed.results.filter(r=>r.total!==null).length}</b><span>Scores available</span></div><div><b>{processed.results.filter(r=>r.rank!==null).length}</b><span>Ranked rows</span></div></div>
+ <div className="stat-bar" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+  <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderLeft: '4px solid #6366f1', borderRadius: '12px', padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <div>
+     <span style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>
+      Total Entries (মোট এন্ট্রি)
+     </span>
+     <b style={{ fontSize: '28px', color: '#1e1b4b', display: 'block', lineHeight: 1.2, marginTop: '4px' }}>
+      {totalRawExamEntries || processed.results.length}
+     </b>
+    </div>
+    <span style={{ background: '#e0e7ff', color: '#4338ca', fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '10px' }}>
+     Raw Rows
+    </span>
+   </div>
+   <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '10px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+    <span>MCQ: <b>{rawMcqRows}</b></span>
+    <span>·</span>
+    <span>CQ: <b>{rawCqRows}</b></span>
+    {rawManualRows > 0 && <><span>·</span><span>Manual: <b>{rawManualRows}</b></span></>}
+    <span>·</span>
+    <span>Distinct rolls: <b>{processed.results.length}</b></span>
+   </div>
+  </div>
+
+  <div
+   onClick={() => setTab('issues')}
+   style={{
+    background: totalIssuesCount > 0 ? '#fffdf7' : '#fff',
+    border: '1px solid #fed7aa',
+    borderLeft: `4px solid ${totalIssuesCount > 0 ? '#f59e0b' : '#10b981'}`,
+    borderRadius: '12px',
+    padding: '16px 18px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+    cursor: 'pointer'
+   }}
+   title="Click to view all issues in Issues tab"
+  >
+   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <div>
+     <span style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#92400e' }}>
+      False / Issues (ত্রুটি ও অসংগতি)
+     </span>
+     <b style={{ fontSize: '28px', color: totalIssuesCount > 0 ? '#b45309' : '#15803d', display: 'block', lineHeight: 1.2, marginTop: '4px' }}>
+      {totalIssuesCount}
+     </b>
+    </div>
+    <span style={{ background: totalIssuesCount > 0 ? '#fef3c7' : '#dcfce7', color: totalIssuesCount > 0 ? '#b45309' : '#15803d', fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '10px' }}>
+     {totalIssuesCount > 0 ? 'Needs Review' : '✓ All Clean'}
+    </span>
+   </div>
+
+   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginTop: '8px' }}>
+    {invalidCount > 0 && (
+     <span style={{ fontSize: '10.5px', background: '#fee2e2', color: '#991b1b', padding: '2px 7px', borderRadius: '12px', fontWeight: '600' }}>
+      Invalid: {invalidCount}
+     </span>
+    )}
+    {duplicateCount > 0 && (
+     <span style={{ fontSize: '10.5px', background: '#fef3c7', color: '#92400e', padding: '2px 7px', borderRadius: '12px', fontWeight: '600' }}>
+      Duplicates: {duplicateCount}
+     </span>
+    )}
+    {notInRosterCount > 0 && (
+     <span style={{ fontSize: '10.5px', background: '#e0e7ff', color: '#3730a3', padding: '2px 7px', borderRadius: '12px', fontWeight: '600' }}>
+      Unregistered: {notInRosterCount}
+     </span>
+    )}
+    {missingInfoCount > 0 && (
+     <span style={{ fontSize: '10.5px', background: '#f1f5f9', color: '#475569', padding: '2px 7px', borderRadius: '12px', fontWeight: '600' }}>
+      Missing info: {missingInfoCount}
+     </span>
+    )}
+    {totalIssuesCount === 0 && (
+     <span style={{ fontSize: '10.5px', background: '#dcfce7', color: '#166534', padding: '2px 7px', borderRadius: '12px', fontWeight: '600' }}>
+      ✓ No issues found
+     </span>
+    )}
+   </div>
+  </div>
+
+  <div
+   onClick={() => setTab('results')}
+   style={{
+    background: '#fff',
+    border: '1px solid #bbf7d0',
+    borderLeft: '4px solid #10b981',
+    borderRadius: '12px',
+    padding: '16px 18px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+    cursor: 'pointer'
+   }}
+   title="Click to view Final Result"
+  >
+   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <div>
+     <span style={{ fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#166534' }}>
+      Final Result (চূড়ান্ত ফলাফল)
+     </span>
+     <b style={{ fontSize: '28px', color: '#065f46', display: 'block', lineHeight: 1.2, marginTop: '4px' }}>
+      {finalRankedCount}
+     </b>
+    </div>
+    <span style={{ background: '#dcfce7', color: '#15803d', fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '10px' }}>
+     Ranked
+    </span>
+   </div>
+   <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '10px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+    <span>Scores available: <b>{finalWithScoresCount}</b></span>
+    <span>·</span>
+    <span>Success rate: <b>{totalRawExamEntries > 0 ? Math.round((finalRankedCount / (totalRawExamEntries || 1)) * 100) : 100}%</b></span>
+    <span>·</span>
+    <span style={{ color: '#059669', fontWeight: '600' }}>Ready to export</span>
+   </div>
+  </div>
+ </div>
  <div className="tabs"><button className={tab==='results'?'on':''} onClick={()=>setTab('results')}>Final result <em>{rawDataset.length}</em></button><button className={tab==='cq'?'on':''} onClick={()=>setTab('cq')}>CQ Issues & Recovery <em>{processed.cqRecovery.length}</em></button><button className={tab==='issues'?'on':''} onClick={()=>setTab('issues')}>Issues <em>{processed.issues.length}</em></button><button className={tab==='audit'?'on':''} onClick={()=>setTab('audit')}>Audit log <em>{processed.audit.length}</em></button></div>
  {tab==='cq'&&<div className="cq-note"><b>CQ duplicate & recovery log.</b><span>When a roll appears in multiple CQ files or entries, the highest mark is kept automatically. Clean exact matches are merged directly into Final Result.</span></div>}
  <div className="preview-search-bar" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px', marginBottom: '10px', flexWrap: 'wrap' }}>
