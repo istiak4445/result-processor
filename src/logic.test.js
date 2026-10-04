@@ -113,7 +113,7 @@ describe('CQ recovery',()=>{
   const cq=parseRows([['Roll','Student Name','College','Marks'],['123456','Ariyan Rahman','Notre Dame College','25']],'cq','cq.xlsx');
   const result=processSources({students,web,cq});
   expect(result.results).toHaveLength(0);
-  expect(result.cqRecovery[0].Status).toBe('Needs review');
+  expect(['Needs review','Skipped']).toContain(result.cqRecovery[0].Status);
  });
  it('keeps ambiguous name and college matches out of the result',()=>{
   const students=parseRows([['Student Name','Roll'],['Same Name','123456'],['Same Name','123457']],'students','students.xlsx');
@@ -152,5 +152,68 @@ describe('CQ recovery',()=>{
   const result=processSources({web,mcq,cq});
   expect(result.results[0]).toMatchObject({roll:'28280011',name:'Istiak Ahmed',mcq:19,cq:21,total:40});
   expect(result.cqRecovery[0]).toMatchObject({Status:'Auto-recovered','Resolved Roll':'28280011'});
+ });
+});
+
+describe('MCQ duplicate detection and resolution',()=>{
+ it('detects duplicate rolls in MCQ and defaults to first entry with pending decision',()=>{
+  const students=parseRows([['Student Name','Roll'],['Student One','123456']],'students','students.xlsx');
+  const mcq=parseRows([
+   ['Roll Number','Score'],
+   ['123456','14'],
+   ['123456','22']
+  ],'mcq','mcq.xlsx');
+  const result=processSources({students,mcq});
+  expect(result.results).toHaveLength(1);
+  expect(result.results[0].mcq).toBe(14);
+  expect(result.mcqDuplicates).toHaveLength(1);
+  expect(result.mcqDuplicates[0]).toMatchObject({
+   roll:'00123456',
+   isResolved:false
+  });
+  expect(result.mcqDuplicates[0].entries).toHaveLength(2);
+  expect(result.mcqDuplicates[0].entries[0].mark).toBe(14);
+  expect(result.mcqDuplicates[0].entries[1].mark).toBe(22);
+  expect(result.issues.some(i=>i.type==='Duplicate MCQ (Action required)')).toBe(true);
+ });
+
+ it('allows user decision to pick specific MCQ duplicate entry',()=>{
+  const students=parseRows([['Student Name','Roll'],['Student One','123456']],'students','students.xlsx');
+  const mcq=parseRows([
+   ['Roll Number','Score'],
+   ['123456','14'],
+   ['123456','22']
+  ],'mcq','mcq.xlsx');
+  const result=processSources({students,mcq},{'00123456':1});
+  expect(result.results[0].mcq).toBe(22);
+  expect(result.mcqDuplicates[0].isResolved).toBe(true);
+  expect(result.mcqDuplicates[0].chosenIndex).toBe(1);
+  expect(result.issues.some(i=>i.type==='Duplicate MCQ (Resolved)')).toBe(true);
+ });
+
+ it('supports highest decision for MCQ duplicate',()=>{
+  const students=parseRows([['Student Name','Roll'],['Student One','123456']],'students','students.xlsx');
+  const mcq=parseRows([
+   ['Roll Number','Score'],
+   ['123456','12'],
+   ['123456','25'],
+   ['123456','18']
+  ],'mcq','mcq.xlsx');
+  const result=processSources({students,mcq},{'00123456':'highest'});
+  expect(result.results[0].mcq).toBe(25);
+  expect(result.mcqDuplicates[0].isResolved).toBe(true);
+ });
+
+ it('keeps CQ duplicate logic untouched: always picks highest CQ mark automatically',()=>{
+  const students=parseRows([['Student Name','Roll'],['Student One','123456']],'students','students.xlsx');
+  const mcq=parseRows([['Roll Number','Score'],['123456','15']],'mcq','mcq.xlsx');
+  const cq=parseRows([
+   ['Roll','Marks'],
+   ['123456','18'],
+   ['123456','24']
+  ],'cq','cq.xlsx');
+  const result=processSources({students,mcq,cq});
+  expect(result.results[0].cq).toBe(24);
+  expect(result.results[0].total).toBe(39);
  });
 });

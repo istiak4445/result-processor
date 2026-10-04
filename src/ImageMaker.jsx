@@ -475,8 +475,8 @@ export default function ImageMaker({ sourceData, exportBaseName='Exam Result', c
               <Download size={17} /> Export Final Searchable PDF
             </button>
             <p className="text-xs text-slate-400">Clean lightweight vector PDF with embedded Kalpurush font and searchable Bangla/English text. The PDF layout is optimized separately from image exports.</p>
-            <TextInput label="Export filename · automatic unless edited" value={customExportName} onChange={onExportNameChange} placeholder={exportBaseName}/>
-            <p className="text-xs text-slate-400">{exportBaseName}</p>
+            <TextInput label="Export filename · directly editable" value={customExportName !== '' ? customExportName : exportBaseName} onChange={onExportNameChange} placeholder={exportBaseName}/>
+            <p className="text-xs text-slate-400">Preview: {exportBaseName}</p>
             <button className="primary-button w-full" onClick={downloadCurrent} disabled={exporting}>
               {exporting ? <Loader2 className="animate-spin" size={17} /> : <Download size={17} />}
               Download Current Image

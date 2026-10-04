@@ -117,13 +117,44 @@ function defaultWebTab(book,matrices){
   if(ranked[0]?.valid>0)return ranked[0].name;
   return book.SheetNames.find(name=>/web\s*roll|web\s*sheet/i.test(name))||ranked[0]?.name||book.SheetNames[0];
 }
-export function makeMap(src){
-  const map=new Map(), duplicates=new Set(), invalid=[];
-  if(!src) return {map,duplicates,invalid,records:[]};
+export function makeMap(src, options = {}){
+  const map=new Map(), duplicates=new Set(), invalid=[], rollGroups=new Map();
+  if(!src) return {map,duplicates,invalid,records:[],rollGroups};
   const records=src.rows.map((row,i)=>{const n=normalizeRoll(row[src.mapping.roll]); return {row,rowNumber:src.rowNumbers?.[i]??i+src.headerIndex+2,sourceFile:src.rowFiles?.[i]||src.fileName,...n}})
     .filter(r=>!(src.type==='web'&&r.original===''));
-  records.forEach(r=>{if(!r.valid){invalid.push(r);return} if(map.has(r.normalized)) duplicates.add(r.normalized); else map.set(r.normalized,r)});
-  return {map,duplicates,invalid,records};
+  records.forEach(r=>{
+    if(!r.valid){invalid.push(r);return}
+    if(!rollGroups.has(r.normalized)) rollGroups.set(r.normalized,[]);
+    rollGroups.get(r.normalized).push(r);
+  });
+  const mcqDecisions = options.mcqDecisions || {};
+  rollGroups.forEach((group, roll)=>{
+    if(group.length > 1){
+      duplicates.add(roll);
+      if(src.type==='mcq' && mcqDecisions[roll] !== undefined){
+        const dec = mcqDecisions[roll];
+        if(typeof dec==='number' && group[dec]){
+          map.set(roll, group[dec]);
+        } else if(dec==='highest'){
+          const sorted = [...group].sort((a,b)=>{
+            const ma = Number(sourceValue(a, src, 'mark'));
+            const mb = Number(sourceValue(b, src, 'mark'));
+            return (Number.isFinite(mb)?mb:-Infinity) - (Number.isFinite(ma)?ma:-Infinity);
+          });
+          map.set(roll, sorted[0]);
+        } else if(dec==='first'){
+          map.set(roll, group[0]);
+        } else {
+          map.set(roll, group[0]);
+        }
+      } else {
+        map.set(roll, group[0]);
+      }
+    } else {
+      map.set(roll, group[0]);
+    }
+  });
+  return {map,duplicates,invalid,records,rollGroups};
 }
 function sourceValue(record, source, field){const i=source?.mapping[field]; return i>=0 ? String(record?.row?.[i]??'').trim():''}
 function normalizeText(value){return String(value??'').toLowerCase().replace(/\b(md|mohammad|muhammad|mohammed)\b/g,'mohammad').replace(/\b(clg|coll)\b/g,'college').replace(/&/g,' and ').replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim()}
@@ -337,8 +368,11 @@ export function resolveCqRows(sources,indexes={}){
 
   return {map:resolved,report,duplicates:cqDuplicates};
 }
-export function processSources(sources){
-  const s=makeMap(sources.students), w=makeMap(sources.web), m=makeMap(sources.mcq), c=makeMap(sources.cq), manual=makeMap(sources.manual);
+export function processSources(sources, options = {}){
+  const mcqDecisions = (typeof options === 'object' && options !== null && !options.rows)
+    ? (options.mcqDecisions || options)
+    : {};
+  const s=makeMap(sources.students), w=makeMap(sources.web), m=makeMap(sources.mcq, {mcqDecisions}), c=makeMap(sources.cq), manual=makeMap(sources.manual);
   const cqResolution=resolveCqRows(sources,{students:s,web:w,mcq:m,cq:c});
   const label=(src,fallback)=>src?.fileName||fallback;
   const examRolls=new Set([...m.map.keys(),...manual.map.keys()]);
@@ -358,19 +392,74 @@ export function processSources(sources){
   });
   const sorted=[...results].sort((a,b)=>(b.total??-Infinity)-(a.total??-Infinity)||a.roll.localeCompare(b.roll));
   let rank=0,last=null; sorted.forEach(r=>{if(r.total===null)return; if(r.total!==last){rank++;last=r.total}r.rank=rank});
+
+  // Group and structure MCQ duplicates
+  const mcqDuplicates = [];
+  if (sources.mcq) {
+    [...m.duplicates].forEach(roll => {
+      const group = m.rollGroups?.get(roll) || [];
+      const chosenRecord = m.map.get(roll);
+      const chosenIndex = group.findIndex(r => r === chosenRecord);
+      const hasDecision = mcqDecisions[roll] !== undefined && mcqDecisions[roll] !== null;
+
+      let maxMark = -Infinity;
+      group.forEach(r => {
+        const val = Number(sourceValue(r, sources.mcq, 'mark'));
+        if (Number.isFinite(val) && val > maxMark) maxMark = val;
+      });
+
+      const student = s.map.get(roll);
+      const web = w.map.get(roll);
+      const studentName = sourceValue(web, sources.web, 'name') || sourceValue(student, sources.students, 'name') || sourceValue(chosenRecord, sources.mcq, 'name') || '';
+      const studentCollege = sourceValue(web, sources.web, 'college') || sourceValue(student, sources.students, 'college') || sourceValue(chosenRecord, sources.mcq, 'college') || '';
+
+      mcqDuplicates.push({
+        roll,
+        studentName,
+        studentCollege,
+        entries: group.map((r, idx) => {
+          const markRaw = sourceValue(r, sources.mcq, 'mark');
+          const markNum = Number(markRaw);
+          return {
+            index: idx,
+            rowNumber: r.rowNumber,
+            originalRoll: r.original,
+            sourceFile: r.sourceFile,
+            markRaw,
+            mark: Number.isFinite(markNum) ? markNum : null,
+            name: sourceValue(r, sources.mcq, 'name'),
+            college: sourceValue(r, sources.mcq, 'college'),
+            isHighest: Number.isFinite(markNum) && markNum === maxMark,
+            isChosen: r === chosenRecord
+          };
+        }),
+        chosenIndex: chosenIndex >= 0 ? chosenIndex : 0,
+        chosenRecord,
+        isResolved: hasDecision
+      });
+    });
+  }
+
   const issueRows=[
     ...m.invalid.map(r=>({type:r.original?'Invalid MCQ roll':'MCQ roll missing',roll:r.original,detail:`MCQ · ${sources.mcq.fileName} · Row ${r.rowNumber}${sourceValue(r,sources.mcq,'name')?` · ${sourceValue(r,sources.mcq,'name')}`:''}: ${sources.mcq.mapping.roll<0?'Roll column not selected':r.reason}`})),
     ...manual.invalid.map(r=>({type:'Invalid manual roll',roll:r.original,detail:`Manual row ${r.rowNumber}: ${r.reason.replace('Expected ','').replace('; found ','; got ')}`})),
     ...[...s.duplicates].filter(roll=>examRolls.has(roll)).map(roll=>({type:'Duplicate roll',roll,detail:'Repeated exam roll in Students',source:label(sources.students,'Students')})),
     ...[...w.duplicates].filter(roll=>examRolls.has(roll)).map(roll=>({type:'Duplicate roll',roll,detail:'Repeated exam roll in Web Roll',source:label(sources.web,'Web Roll')})),
-    ...[...m.duplicates].map(roll=>({type:'Duplicate roll',roll,detail:'Repeated in MCQ (first entry kept)',source:label(sources.mcq,'MCQ')})),
+    ...mcqDuplicates.map(item => ({
+      type: item.isResolved ? 'Duplicate MCQ (Resolved)' : 'Duplicate MCQ (Action required)',
+      roll: item.roll,
+      detail: item.isResolved
+        ? `Repeated in MCQ · User selected Row ${item.chosenRecord?.rowNumber} (Mark: ${sourceValue(item.chosenRecord, sources.mcq, 'mark')}) out of ${item.entries.length} entries`
+        : `Repeated in MCQ (${item.entries.length} entries: ${item.entries.map(e => `Row ${e.rowNumber}=${e.markRaw}`).join(', ')}). Action required: choose which entry to keep.`,
+      source: label(sources.mcq, 'MCQ')
+    })),
     ...[...manual.duplicates].map(roll=>({type:'Duplicate manual roll',roll,detail:'Repeated in manual roll list'})),
     ...(cqResolution.duplicates||[]).map(item=>({type:'Duplicate CQ (Highest kept)',roll:item.roll,detail:`Repeated in CQ (${item.count} entries across ${item.files.join(', ')}); highest mark ${item.highestMark} kept (${item.summary})`,source:'CQ'})),
     ...[...examRolls].filter(roll=>!s.map.has(roll)&&!w.map.has(roll)).map(roll=>({type:'Not in Students',roll,detail:`${[['MCQ',m,sources.mcq],['CQ',c,sources.cq]].flatMap(([kind,indexed,src])=>indexed.records.filter(r=>r.valid&&r.normalized===roll).map(r=>`${kind} · ${src.fileName} · Row ${r.rowNumber} · original ${r.original}`)).join('; ')||'Manual entry'}: No match in Students${sources.web?' or valid Web Roll':' (Web sheet not loaded)'}`})),
     ...(sources.mcq&&(sources.manual||sources.cq)?results.filter(r=>r.mcq===null&&sourceValue(manual.map.get(r.roll),sources.manual,'mark')==='').map(r=>({type:'MCQ missing',roll:r.roll,detail:sources.manual?'Manual roll not found in MCQ':'Present in CQ only'})):[]),
     ...results.filter(r=>!r.name).map(r=>({type:'Name missing',roll:r.roll,detail:'Name blank in Students and Web'})),
   ];
-  return {results:sorted,audit,cqRecovery:cqResolution.report,issues:issueRows.map(({type,roll,detail})=>({type,roll,'Marks source':type.includes('MCQ')?'MCQ':m.map.has(roll)?'MCQ':manual.map.has(roll)?'Manual':'—','Manual Mark':sourceValue(manual.map.get(roll),sources.manual,'mark'),'Manual Status':manual.map.has(roll)?'✓ Edited':'',description:detail}))};
+  return {results:sorted,audit,cqRecovery:cqResolution.report,mcqDuplicates,issues:issueRows.map(({type,roll,detail})=>({type,roll,'Marks source':type.includes('MCQ')?'MCQ':m.map.has(roll)?'MCQ':manual.map.has(roll)?'Manual':'—','Manual Mark':sourceValue(manual.map.get(roll),sources.manual,'mark'),'Manual Status':manual.map.has(roll)?'✓ Edited':'',description:detail}))};
 }
 function SourceCard({type,source,onFile,count=0}){const t=TYPES[type],multiple=type==='cq';return <label className={`source-card ${source?'ready':''}`}>
   <input type="file" accept=".xlsx,.xls,.csv" multiple={multiple} onChange={e=>{const files=[...e.target.files];if(files.length)onFile(multiple?files:files[0],type);e.target.value=''}}/>
@@ -378,29 +467,168 @@ function SourceCard({type,source,onFile,count=0}){const t=TYPES[type],multiple=t
   {source?<CheckCircle2 className="ok" size={20}/>:<Upload size={18}/>}<em>{['mcq','cq'].includes(type)?'Optional · Read-only':'Read-only'}</em>
  </label>}
 function Mapping({source,onChange,onRemove,index}){if(!source)return null;return <div className="mapping"><div className="mapping-head"><b>Detected columns · {source.fileName}</b>{onRemove&&<button type="button" onClick={()=>onRemove(index)}>Remove</button>}</div><div>{['roll','name','college','mark'].filter(f=>f==='roll'||(source.type==='web'&&['name','college'].includes(f))||(source.type==='mcq'&&f==='mark')||(source.type==='cq'&&['name','college','mark'].includes(f))||(source.type==='students'&&['name','college'].includes(f))).map(f=><label key={f}><span>{f}</span><select value={source.mapping[f]} onChange={e=>onChange(source.type,f,+e.target.value,index)}><option value={-1}>Not found</option>{source.headers.map((h,i)=><option key={i} value={i}>{h||`Column ${i+1}`}</option>)}</select></label>)}</div></div>}
+function McqDuplicateNotification({ duplicates = [], decisions = {}, onSelectEntry, onKeepHighestAll, onKeepFirstAll, onReset }){
+  const [collapsed, setCollapsed] = useState(false);
+  if (!duplicates || !duplicates.length) return null;
+  const unresolvedCount = duplicates.filter(d => !d.isResolved).length;
+  const totalCount = duplicates.length;
+
+  return (
+    <div className={`mcq-duplicate-notification ${unresolvedCount > 0 ? 'alert-unresolved' : 'alert-resolved'}`}>
+      <div className="mcq-alert-header">
+        <div className="mcq-alert-icon-wrap">
+          {unresolvedCount > 0 ? <AlertTriangle size={24} /> : <CheckCircle2 size={24} />}
+        </div>
+        <div className="mcq-alert-title-wrap">
+          <div className="mcq-alert-badges">
+            <span className={`mcq-badge ${unresolvedCount > 0 ? 'badge-danger' : 'badge-success'}`}>
+              {unresolvedCount > 0 ? '⚠️ HIGH YIELD ALERT · MCQ DUPLICATE DETECTED' : '✓ MCQ DUPLICATES RESOLVED'}
+            </span>
+            <span className="mcq-count-badge">
+              {unresolvedCount > 0 ? `${unresolvedCount} of ${totalCount} rolls pending decision` : `All ${totalCount} duplicate rolls decided`}
+            </span>
+          </div>
+          <p className="mcq-alert-description">
+            {unresolvedCount > 0 ? (
+              <>
+                <b>MCQ শিটে ডুপ্লিকেট রোল শনাক্ত হয়েছে।</b> CQ-এর ক্ষেত্রে স্বয়ংক্রিয়ভাবে সর্বোচ্চ নম্বর রাখা হয়, কিন্তু <b>MCQ-এর ক্ষেত্রে কোন এন্ট্রিটি ফলাফলে রাখবেন তা নির্ধারণ করুন।</b> নিচের অপশনগুলো থেকে প্রতিটি শিক্ষার্থীর জন্য প্রযোজ্য মার্ক নির্বাচন করুন।
+              </>
+            ) : (
+              <>
+                <b>সকল MCQ ডুপ্লিকেট রোলের সিদ্ধান্ত সম্পন্ন হয়েছে।</b> ফলাফল ও র‍্যাংকিং আপনার নির্বাচিত নম্বর অনুযায়ী প্রস্তুত। প্রয়োজনে যেকোনো সময় সিদ্ধান্ত পরিবর্তন করতে পারেন।
+              </>
+            )}
+          </p>
+        </div>
+        <div className="mcq-alert-actions">
+          <button type="button" className="btn-keep-highest" onClick={onKeepHighestAll} title="সব ডুপ্লিকেট রোলের জন্য সর্বোচ্চ মার্ক রাখুন">
+            ⚡ Keep Highest for All
+          </button>
+          <button type="button" className="btn-keep-first" onClick={onKeepFirstAll} title="সব ডুপ্লিকেট রোলের প্রথম এন্ট্রি রাখুন">
+            ⏮ Keep First for All
+          </button>
+          {Object.keys(decisions).length > 0 && (
+            <button type="button" className="btn-reset-decisions" onClick={onReset} title="সিদ্ধান্ত রিসেট করুন">
+              ↺ Reset
+            </button>
+          )}
+          {totalCount > 1 && (
+            <button type="button" className="btn-toggle-collapse" onClick={() => setCollapsed(!collapsed)}>
+              {collapsed ? `Show Rolls (${totalCount}) ↓` : 'Hide Rolls ↑'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {!collapsed && (
+        <div className="mcq-duplicate-list">
+          {duplicates.map((dup) => {
+            const hasChosen = dup.isResolved;
+            return (
+              <div key={dup.roll} className={`mcq-duplicate-card ${hasChosen ? 'card-resolved' : 'card-unresolved'}`}>
+                <div className="mcq-card-head">
+                  <div className="mcq-card-info">
+                    <span className="mcq-roll-pill">Roll: <b>{dup.roll}</b></span>
+                    {dup.studentName && <span className="mcq-student-name">{dup.studentName}</span>}
+                    {dup.studentCollege && <span className="mcq-student-college">({dup.studentCollege})</span>}
+                  </div>
+                  <span className={`mcq-status-tag ${hasChosen ? 'status-resolved' : 'status-pending'}`}>
+                    {hasChosen ? '✓ Selected' : '● Decision Required'}
+                  </span>
+                </div>
+                <div className="mcq-card-options">
+                  <span className="mcq-choose-label">Choose which entry to keep in Final Result:</span>
+                  <div className="mcq-options-grid">
+                    {dup.entries.map((entry) => {
+                      const isSelected = dup.chosenIndex === entry.index;
+                      return (
+                        <button
+                          key={entry.index}
+                          type="button"
+                          className={`mcq-option-btn ${isSelected ? 'option-selected' : 'option-idle'}`}
+                          onClick={() => onSelectEntry(dup.roll, entry.index)}
+                        >
+                          <div className="mcq-option-radio">
+                            <span className={`radio-dot ${isSelected ? 'dot-active' : ''}`} />
+                          </div>
+                          <div className="mcq-option-body">
+                            <div className="mcq-option-main">
+                              <span className="mcq-option-row">Row {entry.rowNumber}</span>
+                              <b className="mcq-option-mark">Mark: {entry.markRaw !== '' ? entry.markRaw : '0'}</b>
+                              {entry.isHighest && <span className="badge-highest-mark">★ Highest</span>}
+                            </div>
+                            <div className="mcq-option-meta">
+                              {entry.name && <span>Name: {entry.name}</span>}
+                              {entry.sourceFile && <small>{entry.sourceFile}</small>}
+                            </div>
+                          </div>
+                          <span className="mcq-option-state">
+                            {isSelected ? '✓ Kept' : 'Select'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 function App(){
  const [customExportName,setCustomExportName]=useState('');
  const initialLibrary=useMemo(()=>{try{const list=JSON.parse(localStorage.getItem('resultflow.savedSheets')||'[]');if(list.length)return list;const old=JSON.parse(localStorage.getItem('resultflow.webRollConfig')||'null');return old?.url?[{id:googleSheetId(old.url),url:old.url,title:'Saved Google Sheet',webTab:old.sheetName||''}]:[]}catch{return []}},[]);
  const [savedSheets,setSavedSheets]=useState(initialLibrary); const [activeSavedId,setActiveSavedId]=useState(initialLibrary[0]?.id||'');
  const [savedSessions,setSavedSessions]=useState([]);const [activeSessionId,setActiveSessionId]=useState('');const [sessionStartedAt,setSessionStartedAt]=useState(()=>new Date().toISOString());const [sessionCustomName,setSessionCustomName]=useState('');const [sessionStatus,setSessionStatus]=useState('');
- const [sources,setSources]=useState({}); const [link,setLink]=useState(''); const [sheetNames,setSheetNames]=useState([]); const [selectedSheet,setSelectedSheet]=useState(''); const [linkedMatrices,setLinkedMatrices]=useState({}); const [manualRows,setManualRows]=useState([{roll:'',name:'',college:'',mark:'',added:false}]); const [outputFields,setOutputFields]=useState(()=>OUTPUT_FIELDS.map(([id])=>id)); const [busy,setBusy]=useState(''); const [tab,setTab]=useState('results'); const [workspaceTab,setWorkspaceTab]=useState('processor'); const [showIssueDetails,setShowIssueDetails]=useState(false); const [issueFilter,setIssueFilter]=useState(''); const [searchQuery,setSearchQuery]=useState(''); const [error,setError]=useState('');
- const processed=useMemo(()=>processSources(sources),[sources]); const complete=!!sources.students&&!!(sources.mcq||sources.manual);
+ const [sources,setSources]=useState({}); const [mcqDecisions,setMcqDecisions]=useState({}); const [link,setLink]=useState(''); const [sheetNames,setSheetNames]=useState([]); const [selectedSheet,setSelectedSheet]=useState(''); const [linkedMatrices,setLinkedMatrices]=useState({}); const [manualRows,setManualRows]=useState([{roll:'',name:'',college:'',mark:'',added:false}]); const [outputFields,setOutputFields]=useState(()=>OUTPUT_FIELDS.map(([id])=>id)); const [busy,setBusy]=useState(''); const [tab,setTab]=useState('results'); const [workspaceTab,setWorkspaceTab]=useState('processor'); const [showIssueDetails,setShowIssueDetails]=useState(false); const [issueFilter,setIssueFilter]=useState(''); const [searchQuery,setSearchQuery]=useState(''); const [error,setError]=useState('');
+ const processed=useMemo(()=>processSources(sources, mcqDecisions),[sources, mcqDecisions]); const complete=!!sources.students&&!!(sources.mcq||sources.manual);
  const autoExportName=automaticExportName(sources.mcq?.fileName||sources.cqFiles?.[0]?.fileName||sources.cq?.fileName,{mcq:!!sources.mcq,cq:!!sources.cq});
  const exportBaseName=customExportName.trim()?safeExportName(customExportName):autoExportName;
  const sessionTitle=`${sessionCustomName.trim()?`${sessionCustomName.trim()} · `:''}${autoExportName} · Started ${new Date(sessionStartedAt).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'})}`;
+ function handleSelectMcqEntry(roll, index){
+   setMcqDecisions(prev=>({...prev, [roll]: index}));
+ }
+ function keepHighestForAllMcq(){
+   const next = {...mcqDecisions};
+   (processed.mcqDuplicates||[]).forEach(d=>{
+     let highestIdx = 0, highestVal = -Infinity;
+     d.entries.forEach((e, idx)=>{
+       const v = Number(e.markRaw);
+       if(Number.isFinite(v) && v > highestVal){
+         highestVal = v;
+         highestIdx = idx;
+       }
+     });
+     next[d.roll] = highestIdx;
+   });
+   setMcqDecisions(next);
+ }
+ function keepFirstForAllMcq(){
+   const next = {...mcqDecisions};
+   (processed.mcqDuplicates||[]).forEach(d=>{
+     next[d.roll] = 0;
+   });
+   setMcqDecisions(next);
+ }
+ function resetMcqDecisions(){
+   setMcqDecisions({});
+ }
  async function onFile(input,type){try{setBusy(type);setError('');if(type==='cq'){
    const parsed=await Promise.all(input.map(file=>readFile(file,'cq')));
    setSources(current=>{const files=[...(current.cqFiles||(current.cq?[current.cq]:[])),...parsed];return {...current,cqFiles:files,cq:combineCqSources(files)}});
-  }else{const src=await readFile(input,type);setSources(s=>({...s,[type]:src}))}}catch(e){setError(e.message)}finally{setBusy('')}}
+  }else{if(type==='mcq') setMcqDecisions({}); const src=await readFile(input,type);setSources(s=>({...s,[type]:src}))}}catch(e){setError(e.message)}finally{setBusy('')}}
  const [storageStatus,setStorageStatus]=useState('Connecting permanent storage…');
  function cacheLibrary(list){setSavedSheets(list);try{localStorage.setItem('resultflow.savedSheets',JSON.stringify(list))}catch{}}
  async function storageRequest(method='GET',item){const res=await fetch(`/api/sheets${method==='DELETE'?`?id=${encodeURIComponent(item.id)}`:''}`,{method,headers:method==='POST'?{'Content-Type':'application/json'}:{},body:method==='POST'?JSON.stringify(item):undefined});let data;try{data=await res.json()}catch{throw new Error('Permanent storage is unavailable on this server.')}if(!res.ok)throw new Error(data.error||'Permanent save failed');setStorageStatus('✓ Saved in permanent shared storage');return data.sheets}
  async function persistLibrary(list){const changed=list.filter(item=>JSON.stringify(item)!==JSON.stringify(savedSheets.find(x=>x.id===item.id)));const removed=savedSheets.filter(item=>!list.some(x=>x.id===item.id));let latest=list;for(const item of changed)latest=await storageRequest('POST',item);for(const item of removed)latest=await storageRequest('DELETE',item);cacheLibrary(latest)}
  async function sessionRequest(path='',options={}){const res=await fetch(`/api/sessions${path}`,options);let data;try{data=await res.json()}catch{throw new Error('Saved-session service is unavailable.')}if(!res.ok)throw new Error(data.error||'Session request failed');return data}
  async function refreshSessions(){try{const data=await sessionRequest();setSavedSessions(data.sessions);setSessionStatus(data.sessions.length?`${data.sessions.length} saved session${data.sessions.length===1?'':'s'} · automatic 20-day expiry`:'No saved sessions yet')}catch(e){setSessionStatus(e.message)}}
- async function saveSession(){if(!Object.keys(sources).length){setError('Upload at least one source before saving a session.');return}try{setBusy('session');const id=activeSessionId||crypto.randomUUID();const savedSources=Object.fromEntries(Object.entries(sources).filter(([type,source])=>(type!=='web'||!source.linked)&&!(type==='cq'&&sources.cqFiles?.length)));const payload={sources:savedSources,manualRows,outputFields,customExportName,sessionCustomName,activeSavedId};await sessionRequest('',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,title:sessionTitle,createdAt:sessionStartedAt,payload})});setActiveSessionId(id);setSessionStatus('✓ Uploaded files and settings saved for 20 days');await refreshSessions()}catch(e){setError(e.message)}finally{setBusy('')}}
- async function loadSession(id){if(!id)return;try{setBusy('session');setError('');const {session}=await sessionRequest(`?id=${encodeURIComponent(id)}`);const payload=session.payload;const restored={...(payload.sources||{})};if(restored.cqFiles?.length)restored.cq=combineCqSources(restored.cqFiles);setSources(restored);setManualRows(payload.manualRows?.length?payload.manualRows:[{roll:'',name:'',college:'',mark:'',added:false}]);setOutputFields(payload.outputFields?.length?payload.outputFields:OUTPUT_FIELDS.map(([field])=>field));setCustomExportName(payload.customExportName||'');setSessionCustomName(payload.sessionCustomName||'');setActiveSessionId(session.id);setSessionStartedAt(session.createdAt);setTab('results');if(payload.activeSavedId){setActiveSavedId(payload.activeSavedId);const item=savedSheets.find(x=>x.id===payload.activeSavedId);if(item)await loadGoogleSheet(item.url,{preferredTab:item.webTab,knownTitle:item.title})}setSessionStatus(`✓ Loaded · expires ${new Date(session.expiresAt).toLocaleDateString('en-GB')}`)}catch(e){setError(e.message)}finally{setBusy('')}}
- function startNewSession(){setSources(s=>s.web?.linked?{web:s.web}:{});setManualRows([{roll:'',name:'',college:'',mark:'',added:false}]);setOutputFields(OUTPUT_FIELDS.map(([field])=>field));setCustomExportName('');setSessionCustomName('');setActiveSessionId('');setSessionStartedAt(new Date().toISOString());setTab('results');setError('');setSessionStatus('New unsaved session started')}
+ async function saveSession(){if(!Object.keys(sources).length){setError('Upload at least one source before saving a session.');return}try{setBusy('session');const id=activeSessionId||crypto.randomUUID();const savedSources=Object.fromEntries(Object.entries(sources).filter(([type,source])=>(type!=='web'||!source.linked)&&!(type==='cq'&&sources.cqFiles?.length)));const payload={sources:savedSources,manualRows,outputFields,customExportName,sessionCustomName,activeSavedId,mcqDecisions};await sessionRequest('',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,title:sessionTitle,createdAt:sessionStartedAt,payload})});setActiveSessionId(id);setSessionStatus('✓ Uploaded files and settings saved for 20 days');await refreshSessions()}catch(e){setError(e.message)}finally{setBusy('')}}
+ async function loadSession(id){if(!id)return;try{setBusy('session');setError('');const {session}=await sessionRequest(`?id=${encodeURIComponent(id)}`);const payload=session.payload;const restored={...(payload.sources||{})};if(restored.cqFiles?.length)restored.cq=combineCqSources(restored.cqFiles);setSources(restored);setManualRows(payload.manualRows?.length?payload.manualRows:[{roll:'',name:'',college:'',mark:'',added:false}]);setOutputFields(payload.outputFields?.length?payload.outputFields:OUTPUT_FIELDS.map(([field])=>field));setCustomExportName(payload.customExportName||'');setSessionCustomName(payload.sessionCustomName||'');setMcqDecisions(payload.mcqDecisions||{});setActiveSessionId(session.id);setSessionStartedAt(session.createdAt);setTab('results');if(payload.activeSavedId){setActiveSavedId(payload.activeSavedId);const item=savedSheets.find(x=>x.id===payload.activeSavedId);if(item)await loadGoogleSheet(item.url,{preferredTab:item.webTab,knownTitle:item.title})}setSessionStatus(`✓ Loaded · expires ${new Date(session.expiresAt).toLocaleDateString('en-GB')}`)}catch(e){setError(e.message)}finally{setBusy('')}}
+ function startNewSession(){setSources(s=>s.web?.linked?{web:s.web}:{});setManualRows([{roll:'',name:'',college:'',mark:'',added:false}]);setOutputFields(OUTPUT_FIELDS.map(([field])=>field));setCustomExportName('');setSessionCustomName('');setMcqDecisions({});setActiveSessionId('');setSessionStartedAt(new Date().toISOString());setTab('results');setError('');setSessionStatus('New unsaved session started')}
  async function deleteSession(){if(!activeSessionId)return;try{setBusy('session');await sessionRequest(`?id=${encodeURIComponent(activeSessionId)}`,{method:'DELETE'});setActiveSessionId('');setSessionStartedAt(new Date().toISOString());setSessionStatus('Session removed');await refreshSessions()}catch(e){setError(e.message)}finally{setBusy('')}}
  function activateSheet(name,matrices=linkedMatrices,url=sources.web?.link||link,title=sources.web?.workbookTitle||'Google Sheet'){const matrix=matrices[name];if(!matrix)return;setSelectedSheet(name);setSources(s=>({...s,web:{...parseRows(matrix,'web',`${title} · ${name}`),linked:true,link:url,sheetName:name,workbookTitle:title}}))}
 async function loadGoogleSheet(url,{save=false,preferredTab='',knownTitle=''}={}){try{setBusy('web');setError('');googleWorkbookUrl(url);const res=await fetch(googleWorkbookUrl(url),{cache:'no-store'});if(!res.ok)throw new Error('Could not read this sheet. Allow link access, then try again.');const book=XLSX.read(await res.arrayBuffer(),{type:'array',raw:false});const matrices=Object.fromEntries(book.SheetNames.map(name=>[name,XLSX.utils.sheet_to_json(book.Sheets[name],{header:1,defval:'',raw:false})]));const title=knownTitle||workbookTitle(res,book,url);const target=(preferredTab&&matrices[preferredTab]?preferredTab:defaultWebTab(book,matrices));setLinkedMatrices(matrices);setSheetNames(book.SheetNames);activateSheet(target,matrices,url,title);if(save){const id=googleSheetId(url);const next=[...savedSheets.filter(x=>x.id!==id),{id,url,title,webTab:target}];await persistLibrary(next);setActiveSavedId(id);setLink('')}}catch(e){setError(e.message)}finally{setBusy('')}}
@@ -452,6 +680,7 @@ async function loadGoogleSheet(url,{save=false,preferredTab='',knownTitle=''}={}
  const totalIssuesCount=processed.issues.length;
  const invalidCount=processed.issues.filter(x=>/invalid|roll missing/i.test(x.type)).length;
  const duplicateCount=processed.issues.filter(x=>/duplicate/i.test(x.type)).length;
+ const unresolvedMcqCount=(processed.mcqDuplicates||[]).filter(d=>!d.isResolved).length;
  const notInRosterCount=processed.issues.filter(x=>x.type==='Not in Students').length;
  const missingInfoCount=processed.issues.filter(x=>/missing/i.test(x.type)&&!/roll missing/i.test(x.type)).length;
  const finalRankedCount=processed.results.filter(r=>r.rank!==null).length;
@@ -473,6 +702,16 @@ async function loadGoogleSheet(url,{save=false,preferredTab='',knownTitle=''}={}
  <section className="panel"><div className="section-title"><div><span>02</span><h2>Verify detected columns</h2></div><p>Headers are auto-detected even when they are not on row 1. CQ files may use different formats.</p></div>{Object.values(sources).length?<div className="mapping-grid">{Object.entries(sources).filter(([type])=>!['cq','cqFiles'].includes(type)).map(([type,source])=><Mapping key={type} source={source} onChange={mapping}/>)}{(sources.cqFiles||(sources.cq?[sources.cq]:[])).map((source,index)=><Mapping key={`cq-${index}-${source.fileName}`} source={source} index={index} onChange={mapping} onRemove={removeCqFile}/>)}</div>:<div className="empty">Upload a source to see its detected headers.</div>}</section>
  <section className="panel"><div className="section-title"><div><span>03</span><h2>Validation & result preview</h2></div><p>{complete?'Processing is ready. Review every warning before export.':'Students and MCQ sheets are required for uploaded results. CQ is optional enrichment.'}</p></div>
  {complete&&<div className="processing-banner"><CheckCircle2 size={22}/><div><b>Result preview is ready</b><small>{processed.results.length} exam rolls processed · {processed.results.filter(r=>r.rank!==null).length} ranked · {processed.issues.length} issues</small></div><button onClick={()=>setTab('results')}>View final result</button></div>}
+ {processed.mcqDuplicates?.length > 0 && (
+  <McqDuplicateNotification
+   duplicates={processed.mcqDuplicates}
+   decisions={mcqDecisions}
+   onSelectEntry={handleSelectMcqEntry}
+   onKeepHighestAll={keepHighestForAllMcq}
+   onKeepFirstAll={keepFirstForAllMcq}
+   onReset={resetMcqDecisions}
+  />
+ )}
  <div className="stat-bar" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px', marginBottom: '20px' }}>
   <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderLeft: '4px solid #6366f1', borderRadius: '12px', padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -526,6 +765,11 @@ async function loadGoogleSheet(url,{save=false,preferredTab='',knownTitle=''}={}
    </div>
 
    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginTop: '8px' }}>
+    {unresolvedMcqCount > 0 && (
+     <span style={{ fontSize: '10.5px', background: '#dc2626', color: '#fff', padding: '2px 7px', borderRadius: '12px', fontWeight: '700' }}>
+      MCQ Duplicates: {unresolvedMcqCount} (Action Required)
+     </span>
+    )}
     {invalidCount > 0 && (
      <span style={{ fontSize: '10.5px', background: '#fee2e2', color: '#991b1b', padding: '2px 7px', borderRadius: '12px', fontWeight: '600' }}>
       Invalid: {invalidCount}
@@ -650,7 +894,43 @@ async function loadGoogleSheet(url,{save=false,preferredTab='',knownTitle=''}={}
  {tab==='issues'&&Object.keys(issueCounts).length>0&&<div className="chips concise" style={{ marginBottom: '10px' }}><button className={!issueFilter?'selected':''} onClick={()=>setIssueFilter('')}><b>{processed.issues.length}</b>All issues</button>{Object.entries(issueCounts).map(([k,v])=><button className={`${issueFilter===k?'selected ':''}${k==='Manual edited'?'manual-chip':''}`} key={k} onClick={()=>setIssueFilter(k)}>{k==='Manual edited'?<CheckCircle2 size={13}/>:<AlertTriangle size={13}/>}<b>{v}</b>{k}</button>)}</div>}
  <Table tab={tab} data={currentDisplayData} isSearching={!!searchQuery.trim()}/>
  <div className="field-options"><div><b>Final output fields</b><small>Choose what appears in preview and every export.</small></div>{OUTPUT_FIELDS.map(([id,label])=><label key={id}><input type="checkbox" checked={outputFields.includes(id)} onChange={()=>toggleOutput(id)}/><span>{label}</span></label>)}</div>
- <label className="sheet-picker"><span>Export filename · automatic</span><input value={customExportName} placeholder={autoExportName} onChange={e=>setCustomExportName(e.target.value)}/><small>{exportBaseName} · Leave blank for automatic naming from MCQ/CQ.</small></label>
+ <div className="sheet-picker filename-editor-card">
+  <span>Export filename</span>
+  <div style={{ position: 'relative', width: '100%' }}>
+   <input
+    type="text"
+    value={customExportName !== '' ? customExportName : autoExportName}
+    onChange={e=>setCustomExportName(e.target.value)}
+    title="Directly edit the export filename here"
+    placeholder="Export filename…"
+    style={{ width: '100%', paddingRight: customExportName ? '28px' : '8px' }}
+   />
+   {customExportName&&(
+    <button
+     type="button"
+     onClick={()=>setCustomExportName('')}
+     title="Reset to automatic filename"
+     style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#94a3b8', fontSize: '15px', cursor: 'pointer', padding: '2px 4px' }}
+    >
+     ×
+    </button>
+   )}
+  </div>
+  <small style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+   <span>Preview:</span>
+   <b style={{ color: '#4f46e5', background: '#eef2ff', padding: '2px 7px', borderRadius: '5px' }}>{exportBaseName}</b>
+   <span>(.xlsx / .csv / .pdf)</span>
+   {customExportName&&(
+    <button
+     type="button"
+     onClick={()=>setCustomExportName('')}
+     style={{ background: 'none', border: 'none', color: '#6366f1', textDecoration: 'underline', cursor: 'pointer', fontSize: '10px', padding: '0 2px' }}
+    >
+     Reset to auto
+    </button>
+   )}
+  </small>
+ </div>
  <div className="export"><div><b>Ready when you are</b><small>Exports contain clean result fields only. Paid Amount and helpers are excluded.</small></div><button onClick={exportCsv} disabled={!processed.results.length}><Download size={16}/> CSV</button><button onClick={exportPdf} disabled={!processed.results.length}><Download size={16}/> PDF</button><button className="primary" onClick={exportXlsx} disabled={!processed.results.length}><Download size={16}/> Excel</button></div>
  </section></div>
  <div className={workspaceTab==='image'?'image-workspace':'workspace-hidden'}><ImageMaker sourceData={imageSource} exportBaseName={exportBaseName} customExportName={customExportName} onExportNameChange={setCustomExportName}/></div>
