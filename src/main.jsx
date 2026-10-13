@@ -205,7 +205,8 @@ export function resolveCqRows(sources,indexes={}){
     };
   };
 
-  const candidateRolls=[...m.map.keys()].filter(roll=>!m.duplicates.has(roll)&&(s.map.has(roll)||w.map.has(roll)||!sources.students));
+  const eligibleRolls=sources.mcq?new Set(m.map.keys()):new Set([...s.map.keys(),...w.map.keys()]);
+  const candidateRolls=[...eligibleRolls].filter(roll=>!m.duplicates.has(roll)&&(s.map.has(roll)||w.map.has(roll)||!sources.students));
   const unmatchedCq=[];
   const validRollGroups = new Map();
 
@@ -214,7 +215,6 @@ export function resolveCqRows(sources,indexes={}){
     const originalRoll=record.original;const cqName=sourceValue(record,sources.cq,'name');const cqCollege=sourceValue(record,sources.cq,'college');const markRaw=sourceValue(record,sources.cq,'mark');const mark=Number(markRaw);
     const base={Source:record.sourceFile||sources.cq.fileName,row:record.rowNumber,'Original CQ Roll':originalRoll,'CQ Name':cqName,'CQ College':cqCollege,'CQ Mark':markRaw};
     if(markRaw===''||!Number.isFinite(mark)){report.push({...base,Status:'Skipped','Resolved Roll':'',Confidence:'','Reason':'CQ mark is blank or invalid'});return}
-    if(!sources.mcq){report.push({...base,Status:'Skipped','Resolved Roll':'',Confidence:'','Reason':'MCQ sheet is required before CQ can be applied'});return}
     if(record.valid){
       const roll=record.normalized;
       if(!validRollGroups.has(roll)) validRollGroups.set(roll,[]);
@@ -228,7 +228,7 @@ export function resolveCqRows(sources,indexes={}){
   validRollGroups.forEach((entries,roll)=>{
     if(entries.length===1){
       const {record,base,cqName,cqCollege,markRaw,mark}=entries[0];
-      if(record.valid&&m.map.has(roll)&&!used.has(roll)){
+      if(record.valid&&eligibleRolls.has(roll)&&!used.has(roll)){
         resolved.set(roll,record);
         used.add(roll);
         if(m.duplicates.has(roll)){
@@ -252,7 +252,7 @@ export function resolveCqRows(sources,indexes={}){
         summary:entries.map(e=>`${e.record.sourceFile||sources.cq.fileName}#${e.record.rowNumber}: ${e.mark}`).join(', ')
       });
 
-      if(m.map.has(roll)&&!used.has(roll)){
+      if(eligibleRolls.has(roll)&&!used.has(roll)){
         resolved.set(roll,highest.record);
         used.add(roll);
 
@@ -375,7 +375,7 @@ export function processSources(sources, options = {}){
   const s=makeMap(sources.students), w=makeMap(sources.web), m=makeMap(sources.mcq, {mcqDecisions}), c=makeMap(sources.cq), manual=makeMap(sources.manual);
   const cqResolution=resolveCqRows(sources,{students:s,web:w,mcq:m,cq:c});
   const label=(src,fallback)=>src?.fileName||fallback;
-  const examRolls=new Set([...m.map.keys(),...manual.map.keys()]);
+  const examRolls=new Set([...m.map.keys(),...(!sources.mcq?cqResolution.map.keys():[]),...manual.map.keys()]);
   const results=[], audit=[];
   [...examRolls].forEach((roll,index)=>{
     const student=s.map.get(roll), web=w.map.get(roll), mcq=m.map.get(roll), cq=cqResolution.map.get(roll), manualRow=manual.map.get(roll);
@@ -584,7 +584,7 @@ function App(){
  const [savedSheets,setSavedSheets]=useState(initialLibrary); const [activeSavedId,setActiveSavedId]=useState(initialLibrary[0]?.id||'');
  const [savedSessions,setSavedSessions]=useState([]);const [activeSessionId,setActiveSessionId]=useState('');const [sessionStartedAt,setSessionStartedAt]=useState(()=>new Date().toISOString());const [sessionCustomName,setSessionCustomName]=useState('');const [sessionStatus,setSessionStatus]=useState('');
  const [sources,setSources]=useState({}); const [mcqDecisions,setMcqDecisions]=useState({}); const [link,setLink]=useState(''); const [sheetNames,setSheetNames]=useState([]); const [selectedSheet,setSelectedSheet]=useState(''); const [linkedMatrices,setLinkedMatrices]=useState({}); const [manualRows,setManualRows]=useState([{roll:'',name:'',college:'',mark:'',added:false}]); const [outputFields,setOutputFields]=useState(()=>OUTPUT_FIELDS.map(([id])=>id)); const [busy,setBusy]=useState(''); const [tab,setTab]=useState('results'); const [workspaceTab,setWorkspaceTab]=useState('processor'); const [showIssueDetails,setShowIssueDetails]=useState(false); const [issueFilter,setIssueFilter]=useState(''); const [searchQuery,setSearchQuery]=useState(''); const [error,setError]=useState('');
- const processed=useMemo(()=>processSources(sources, mcqDecisions),[sources, mcqDecisions]); const complete=!!sources.students&&!!(sources.mcq||sources.manual);
+ const processed=useMemo(()=>processSources(sources, mcqDecisions),[sources, mcqDecisions]); const complete=!!sources.students&&!!(sources.mcq||sources.cq||sources.manual);
  const autoExportName=automaticExportName(sources.mcq?.fileName||sources.cqFiles?.[0]?.fileName||sources.cq?.fileName,{mcq:!!sources.mcq,cq:!!sources.cq});
  const exportBaseName=customExportName.trim()?safeExportName(customExportName):autoExportName;
  const sessionTitle=`${sessionCustomName.trim()?`${sessionCustomName.trim()} · `:''}${autoExportName} · Started ${new Date(sessionStartedAt).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'})}`;
@@ -700,7 +700,7 @@ async function loadGoogleSheet(url,{save=false,preferredTab='',knownTitle=''}={}
  {sources.web?.linked&&<div className="active"><CheckCircle2 size={16}/> Active database: <b>{sources.web.workbookTitle}</b> · {sources.web.sheetName}<a href={sources.web.link} target="_blank">Open source</a></div>}
  </section>
  <section className="panel"><div className="section-title"><div><span>02</span><h2>Verify detected columns</h2></div><p>Headers are auto-detected even when they are not on row 1. CQ files may use different formats.</p></div>{Object.values(sources).length?<div className="mapping-grid">{Object.entries(sources).filter(([type])=>!['cq','cqFiles'].includes(type)).map(([type,source])=><Mapping key={type} source={source} onChange={mapping}/>)}{(sources.cqFiles||(sources.cq?[sources.cq]:[])).map((source,index)=><Mapping key={`cq-${index}-${source.fileName}`} source={source} index={index} onChange={mapping} onRemove={removeCqFile}/>)}</div>:<div className="empty">Upload a source to see its detected headers.</div>}</section>
- <section className="panel"><div className="section-title"><div><span>03</span><h2>Validation & result preview</h2></div><p>{complete?'Processing is ready. Review every warning before export.':'Students and MCQ sheets are required for uploaded results. CQ is optional enrichment.'}</p></div>
+ <section className="panel"><div className="section-title"><div><span>03</span><h2>Validation & result preview</h2></div><p>{complete?'Processing is ready. Review every warning before export.':'Upload Students and either MCQ or CQ marks. Written-only exams can use CQ without MCQ.'}</p></div>
  {complete&&<div className="processing-banner"><CheckCircle2 size={22}/><div><b>Result preview is ready</b><small>{processed.results.length} exam rolls processed · {processed.results.filter(r=>r.rank!==null).length} ranked · {processed.issues.length} issues</small></div><button onClick={()=>setTab('results')}>View final result</button></div>}
  {processed.mcqDuplicates?.length > 0 && (
   <McqDuplicateNotification

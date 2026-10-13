@@ -107,13 +107,29 @@ describe('CQ recovery',()=>{
   expect(result.cqRecovery[0]).toMatchObject({Status:'Auto-recovered','Resolved Roll':'00123456'});
   expect(result.issues.some(issue=>String(issue.type).includes('CQ'))).toBe(false);
  });
- it('never adds CQ marks when the resolved student has no MCQ row',()=>{
+ it('ranks written-only exams when no MCQ sheet is supplied',()=>{
   const students=parseRows([['Student Name','Roll'],['Ariyan Rahman','123456']],'students','students.xlsx');
   const web=parseRows([['WEB Roll*','Name','College'],['123456','Ariyan Rahman','Notre Dame College']],'web','web.xlsx');
   const cq=parseRows([['Roll','Student Name','College','Marks'],['123456','Ariyan Rahman','Notre Dame College','25']],'cq','cq.xlsx');
   const result=processSources({students,web,cq});
-  expect(result.results).toHaveLength(0);
-  expect(['Needs review','Skipped']).toContain(result.cqRecovery[0].Status);
+  expect(result.results).toHaveLength(1);
+  expect(result.results[0]).toMatchObject({roll:'00123456',mcq:null,cq:25,total:25,rank:1});
+  expect(result.cqRecovery).toHaveLength(0);
+ });
+ it('keeps highest written-only mark and dense ranks CQ totals',()=>{
+  const students=parseRows([['Name','Roll'],['A','123456'],['B','123457'],['C','123458']],'students','students.xlsx');
+  const cq=parseRows([['Roll','Marks'],['123456','10'],['123456','25'],['123457','25'],['123458','0']],'cq','written.xlsx');
+  const result=processSources({students,cq});
+  expect(result.results.map(r=>[r.cq,r.total,r.rank])).toEqual([[25,25,1],[25,25,1],[0,0,2]]);
+  expect(result.issues.some(i=>i.type==='MCQ missing')).toBe(false);
+ });
+ it('still excludes CQ-only students when an MCQ sheet is supplied',()=>{
+  const students=parseRows([['Name','Roll'],['A','123456'],['B','123457']],'students','students.xlsx');
+  const mcq=parseRows([['Roll','Score'],['123456','15']],'mcq','mcq.xlsx');
+  const cq=parseRows([['Roll','Marks'],['123456','25'],['123457','30']],'cq','written.xlsx');
+  const result=processSources({students,mcq,cq});
+  expect(result.results).toHaveLength(1);
+  expect(result.results[0]).toMatchObject({roll:'00123456',mcq:15,cq:25,total:40});
  });
  it('keeps ambiguous name and college matches out of the result',()=>{
   const students=parseRows([['Student Name','Roll'],['Same Name','123456'],['Same Name','123457']],'students','students.xlsx');
