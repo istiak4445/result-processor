@@ -195,6 +195,25 @@ export function resolveCqRows(sources,indexes={}){
   const resolved=new Map(),report=[],used=new Set(),cqDuplicates=[];
   if(!sources.cq)return {map:resolved,report,duplicates:cqDuplicates};
 
+  // Written-only exams use CQ rolls directly, just as MCQ supplies exam rolls.
+  // Student/Web matching and missing-student validation happen in processSources.
+  if(!sources.mcq){
+    c.rollGroups.forEach((entries,roll)=>{
+      const score=record=>{
+        const raw=sourceValue(record,sources.cq,'mark');
+        return raw!==''&&Number.isFinite(Number(raw))?Number(raw):-Infinity;
+      };
+      const sorted=[...entries].sort((a,b)=>score(b)-score(a));
+      resolved.set(roll,sorted[0]);
+      if(entries.length>1)cqDuplicates.push({
+        roll,count:entries.length,highestMark:sourceValue(sorted[0],sources.cq,'mark'),
+        files:[...new Set(entries.map(r=>r.sourceFile||sources.cq.fileName))],
+        summary:entries.map(r=>`${r.sourceFile||sources.cq.fileName}#${r.rowNumber}: ${sourceValue(r,sources.cq,'mark')}`).join(', ')
+      });
+    });
+    return {map:resolved,report,duplicates:cqDuplicates};
+  }
+
   const getCandidate=(roll)=>{
     const web=w.map.get(roll),student=s.map.get(roll),mcq=m.map.get(roll);
     return {
@@ -205,8 +224,7 @@ export function resolveCqRows(sources,indexes={}){
     };
   };
 
-  const eligibleRolls=sources.mcq?new Set(m.map.keys()):new Set([...s.map.keys(),...w.map.keys()]);
-  const candidateRolls=[...eligibleRolls].filter(roll=>!m.duplicates.has(roll)&&(s.map.has(roll)||w.map.has(roll)||!sources.students));
+  const candidateRolls=[...m.map.keys()].filter(roll=>!m.duplicates.has(roll)&&(s.map.has(roll)||w.map.has(roll)||!sources.students));
   const unmatchedCq=[];
   const validRollGroups = new Map();
 
@@ -228,7 +246,7 @@ export function resolveCqRows(sources,indexes={}){
   validRollGroups.forEach((entries,roll)=>{
     if(entries.length===1){
       const {record,base,cqName,cqCollege,markRaw,mark}=entries[0];
-      if(record.valid&&eligibleRolls.has(roll)&&!used.has(roll)){
+      if(record.valid&&m.map.has(roll)&&!used.has(roll)){
         resolved.set(roll,record);
         used.add(roll);
         if(m.duplicates.has(roll)){
@@ -252,7 +270,7 @@ export function resolveCqRows(sources,indexes={}){
         summary:entries.map(e=>`${e.record.sourceFile||sources.cq.fileName}#${e.record.rowNumber}: ${e.mark}`).join(', ')
       });
 
-      if(eligibleRolls.has(roll)&&!used.has(roll)){
+      if(m.map.has(roll)&&!used.has(roll)){
         resolved.set(roll,highest.record);
         used.add(roll);
 
@@ -441,6 +459,7 @@ export function processSources(sources, options = {}){
   }
 
   const issueRows=[
+    ...(!sources.mcq?c.invalid.map(r=>({type:r.original?'Invalid CQ roll':'CQ roll missing',roll:r.original,detail:`CQ · ${r.sourceFile||sources.cq.fileName} · Row ${r.rowNumber}: ${sources.cq.mapping.roll<0?'Roll column not selected':r.reason}`})):[]),
     ...m.invalid.map(r=>({type:r.original?'Invalid MCQ roll':'MCQ roll missing',roll:r.original,detail:`MCQ · ${sources.mcq.fileName} · Row ${r.rowNumber}${sourceValue(r,sources.mcq,'name')?` · ${sourceValue(r,sources.mcq,'name')}`:''}: ${sources.mcq.mapping.roll<0?'Roll column not selected':r.reason}`})),
     ...manual.invalid.map(r=>({type:'Invalid manual roll',roll:r.original,detail:`Manual row ${r.rowNumber}: ${r.reason.replace('Expected ','').replace('; found ','; got ')}`})),
     ...[...s.duplicates].filter(roll=>examRolls.has(roll)).map(roll=>({type:'Duplicate roll',roll,detail:'Repeated exam roll in Students',source:label(sources.students,'Students')})),
@@ -459,7 +478,7 @@ export function processSources(sources, options = {}){
     ...(sources.mcq&&(sources.manual||sources.cq)?results.filter(r=>r.mcq===null&&sourceValue(manual.map.get(r.roll),sources.manual,'mark')==='').map(r=>({type:'MCQ missing',roll:r.roll,detail:sources.manual?'Manual roll not found in MCQ':'Present in CQ only'})):[]),
     ...results.filter(r=>!r.name).map(r=>({type:'Name missing',roll:r.roll,detail:'Name blank in Students and Web'})),
   ];
-  return {results:sorted,audit,cqRecovery:cqResolution.report,mcqDuplicates,issues:issueRows.map(({type,roll,detail})=>({type,roll,'Marks source':type.includes('MCQ')?'MCQ':m.map.has(roll)?'MCQ':manual.map.has(roll)?'Manual':'—','Manual Mark':sourceValue(manual.map.get(roll),sources.manual,'mark'),'Manual Status':manual.map.has(roll)?'✓ Edited':'',description:detail}))};
+  return {results:sorted,audit,cqRecovery:cqResolution.report,mcqDuplicates,issues:issueRows.map(({type,roll,detail})=>({type,roll,'Marks source':type.includes('MCQ')?'MCQ':m.map.has(roll)?'MCQ':!sources.mcq&&c.map.has(roll)?'CQ':manual.map.has(roll)?'Manual':'—','Manual Mark':sourceValue(manual.map.get(roll),sources.manual,'mark'),'Manual Status':manual.map.has(roll)?'✓ Edited':'',description:detail}))};
 }
 function SourceCard({type,source,onFile,count=0}){const t=TYPES[type],multiple=type==='cq';return <label className={`source-card ${source?'ready':''}`}>
   <input type="file" accept=".xlsx,.xls,.csv" multiple={multiple} onChange={e=>{const files=[...e.target.files];if(files.length)onFile(multiple?files:files[0],type);e.target.value=''}}/>

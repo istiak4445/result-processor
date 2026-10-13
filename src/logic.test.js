@@ -123,6 +123,16 @@ describe('CQ recovery',()=>{
   expect(result.results.map(r=>[r.cq,r.total,r.rank])).toEqual([[25,25,1],[25,25,1],[0,0,2]]);
   expect(result.issues.some(i=>i.type==='MCQ missing')).toBe(false);
  });
+ it('validates unmatched written rolls like MCQ without CQ recovery',()=>{
+  const students=parseRows([['Name','Roll'],['A','123456']],'students','students.xlsx');
+  const cq=parseRows([['Roll','Marks'],['123456','19'],['28282201','7'],['281504','11'],['281660','8'],['bad','5']],'cq','written.xlsx');
+  const result=processSources({students,cq});
+  expect(result.results).toHaveLength(1);
+  expect(result.cqRecovery).toEqual([]);
+  expect(result.issues.filter(i=>i.type==='Not in Students')).toHaveLength(3);
+  expect(result.issues.some(i=>i.type==='Invalid CQ roll')).toBe(true);
+  expect(JSON.stringify(result.issues)).not.toContain('not found in MCQ');
+ });
  it('still excludes CQ-only students when an MCQ sheet is supplied',()=>{
   const students=parseRows([['Name','Roll'],['A','123456'],['B','123457']],'students','students.xlsx');
   const mcq=parseRows([['Roll','Score'],['123456','15']],'mcq','mcq.xlsx');
