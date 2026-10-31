@@ -10,7 +10,7 @@ export function buildOmrIssuesPdf({ issues = [] }) {
   doc.setFontSize(16);
   doc.text('OMR Flagged Rolls & Audit Issues', 32, 36);
   doc.setFontSize(10);
-  doc.text(`${issues.length} issues | Search by roll number using Find / Ctrl+F / Cmd+F`, 32, 54);
+  doc.text(`${issues.length} flagged entries | Search by roll number using Find / Ctrl+F / Cmd+F`, 32, 54);
   autoTable(doc, {
     startY: 68,
     margin: { left: 32, right: 32, bottom: 32 },

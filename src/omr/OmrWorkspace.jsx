@@ -70,6 +70,7 @@ export default function OmrWorkspace({
   const [searchQuery, setSearchQuery] = useState('');
   const [minScoreFilter, setMinScoreFilter] = useState(0);
   const [activeTab, setActiveTab] = useState('results'); // 'results' | 'issues'
+  const [issueScope, setIssueScope] = useState('all');
   const [isExporting, setIsExporting] = useState(false);
 
   // Parse Answer Key
@@ -433,15 +434,18 @@ export default function OmrWorkspace({
             </div>
             {(sources.students || sources.web) && (
               <div style={{ background: '#faf5ff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e9d5ff' }}>
-                <div style={{ fontSize: '11.5px', color: '#6b21a8', fontWeight: '500' }}>তালিকা বহির্ভূত রোল</div>
+                <div style={{ fontSize: '11.5px', color: '#6b21a8', fontWeight: '500' }}>ফলাফল থেকে বাদ পড়া এন্ট্রি</div>
                 <div style={{ fontSize: '20px', fontWeight: '800', color: '#7e22ce' }}>{processed.stats?.excluded || 0}</div>
-                <div style={{ fontSize: '11px', color: '#a855f7' }}>ফলাফল তালিকা থেকে বাদ</div>
+                <div style={{ fontSize: '11px', color: '#a855f7' }}>Roster-এ মেলেনি বা রোল অবৈধ</div>
+                <button onClick={() => { setIssueScope('excluded'); setActiveTab('issues'); }}>বাদ পড়া এন্ট্রি দেখুন</button>
               </div>
             )}
             <div style={{ background: '#fffbeb', padding: '10px 14px', borderRadius: '8px', border: '1px solid #fde68a' }}>
-              <div style={{ fontSize: '11.5px', color: '#92400e', fontWeight: '500' }}>পর্যালোচনা প্রয়োজন</div>
-              <div style={{ fontSize: '20px', fontWeight: '800', color: '#b45309' }}>{processed.issues?.length || 0}</div>
-              <div style={{ fontSize: '11px', color: '#d97706' }}>ভুল বা ডুপ্লিকেট রোল</div>
+              <div style={{ fontSize: '11.5px', color: '#92400e', fontWeight: '500' }}>সমস্যাযুক্ত এন্ট্রি (একবার করে গণনা)</div>
+              <div style={{ fontSize: '20px', fontWeight: '800', color: '#b45309' }}>{processed.stats?.flagged || 0}</div>
+              <div style={{ fontSize: '11px', color: '#d97706' }}>বাদ {processed.stats?.excluded || 0} + ফলাফলে আছে {processed.stats?.reviewInResults || 0} = {processed.stats?.flagged || 0} এন্ট্রি</div>
+              <div style={{ fontSize: '11px', color: '#d97706' }}>এগুলোতে মোট {processed.stats?.issueCount || 0}টি সমস্যা; এক এন্ট্রিতে একাধিক হতে পারে</div>
+              <button onClick={() => { setIssueScope('all'); setActiveTab('issues'); }}>সব সমস্যাযুক্ত এন্ট্রি দেখুন</button>
             </div>
           </div>
 
@@ -521,7 +525,7 @@ export default function OmrWorkspace({
                 Results ({filteredResults.length})
               </button>
               <button
-                onClick={() => setActiveTab('issues')}
+                onClick={() => { setIssueScope('all'); setActiveTab('issues'); }}
                 style={{
                   padding: '5px 12px',
                   borderRadius: '4px',
@@ -534,7 +538,7 @@ export default function OmrWorkspace({
                   boxShadow: activeTab === 'issues' ? '0 1px 2px rgba(0,0,0,0.1)' : 'none'
                 }}
               >
-                Flagged Issues ({processed.issues?.length || 0})
+                Flagged Entries ({processed.stats?.flagged || 0})
               </button>
             </div>
           </div>
@@ -756,15 +760,21 @@ export default function OmrWorkspace({
       {omrData && activeTab === 'issues' && (
         <div style={{ background: 'white', borderRadius: '8px', border: '1px solid #e2e8f0', padding: '16px' }}>
           <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600', color: '#dc2626' }}>
-            Flagged Rolls & Audit Issues ({processed.issues?.length || 0})
+            Flagged Entries ({processed.stats?.flagged || 0}) · Total Issues ({processed.stats?.issueCount || 0})
           </h4>
           <button
-            onClick={() => exportOmrIssuesPdf({ issues: processed.issues, fileName: examTitle || fileName || 'OMR_Result' })}
+            onClick={() => exportOmrIssuesPdf({ issues: (processed.flaggedRows || []).map(row => ({ ...row, detail: `${row.excluded ? 'Excluded from result' : 'In result - review needed'}: ${row.detail}` })), fileName: examTitle || fileName || 'OMR_Result' })}
             disabled={!processed.issues?.length}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginBottom: '12px', padding: '9px 12px', border: 0, borderRadius: '6px', background: '#342d5b', color: 'white', cursor: 'pointer' }}
           >
             <Download size={15} /> Download Issues PDF (searchable)
           </button>
+          <p style={{ fontSize: '12px', color: '#64748b' }}>প্রতি source row একবার দেখানো হচ্ছে। একই রোল ফাইলে একাধিক row-তে থাকলে row number দিয়ে আলাদা করা হয়েছে। PDF-এ সব flagged entry থাকবে।</p>
+          <label style={{ display: 'block', marginBottom: '12px' }}>দেখুন: <select value={issueScope} onChange={event => setIssueScope(event.target.value)}>
+            <option value="all">সব সমস্যাযুক্ত এন্ট্রি ({processed.stats?.flagged || 0})</option>
+            <option value="excluded">ফলাফল থেকে বাদ ({processed.stats?.excluded || 0})</option>
+            <option value="included">ফলাফলে আছে, যাচাই প্রয়োজন ({processed.stats?.reviewInResults || 0})</option>
+          </select></label>
           {processed.issues?.length === 0 ? (
             <div style={{ color: '#16a34a', fontSize: '13px' }}>No issues found! All roll numbers are valid.</div>
           ) : (
@@ -774,15 +784,17 @@ export default function OmrWorkspace({
                   <th style={{ padding: '8px' }}>Type</th>
                   <th style={{ padding: '8px' }}>Roll in Sheet</th>
                   <th style={{ padding: '8px' }}>Row Number</th>
+                  <th style={{ padding: '8px' }}>Result Status</th>
                   <th style={{ padding: '8px' }}>Details / Reason</th>
                 </tr>
               </thead>
               <tbody>
-                {processed.issues.map((issue, idx) => (
+                {(processed.flaggedRows || []).filter(row => issueScope === 'all' || (issueScope === 'excluded' ? row.excluded : !row.excluded)).map((issue, idx) => (
                   <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '8px', fontWeight: '600', color: '#dc2626' }}>{issue.type}</td>
                     <td style={{ padding: '8px', fontFamily: 'monospace' }}>{issue.roll}</td>
                     <td style={{ padding: '8px' }}>{issue.rowNumber}</td>
+                    <td style={{ padding: '8px' }}>{issue.excluded ? 'বাদ পড়েছে' : 'ফলাফলে আছে · যাচাই প্রয়োজন'}</td>
                     <td style={{ padding: '8px', color: '#64748b' }}>{issue.detail}</td>
                   </tr>
                 ))}

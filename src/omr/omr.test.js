@@ -13,13 +13,34 @@ describe('OMR flagged issues', () => {
       { Roll: '281213', Q1: 'B', _rowIndex: 8 },
       { Roll: 'N/A', Q1: 'A', _rowIndex: 9 }
     ] };
-    const { results, issues, stats } = processOmrData({ omrData, sources: { students }, answerKeyMap: { 1: 'A' } });
+    const { results, issues, stats, flaggedRows } = processOmrData({ omrData, sources: { students }, answerKeyMap: { 1: 'A' } });
     expect(results).toHaveLength(1);
     const missing = issues.filter(issue => issue.type === 'Not in Students');
     expect(missing.map(issue => issue.rowNumber)).toEqual([7, 8]);
     expect(missing.every(issue => issue.detail.includes('Excluded from final result'))).toBe(true);
     expect(issues.filter(issue => issue.type === 'Invalid Roll')).toHaveLength(1);
     expect(stats.excluded).toBe(3);
+    expect(stats.flagged).toBe(3);
+    expect(stats.issueCount).toBe(5);
+    expect(stats.reviewInResults).toBe(0);
+    expect(flaggedRows.map(row => row.rowNumber)).toEqual([7, 8, 9]);
+    expect(flaggedRows[0].reasons).toHaveLength(2);
+    expect(stats.flagged).toBe(stats.excluded + stats.reviewInResults);
+  });
+
+  it('separates excluded rows from review rows retained in the result', () => {
+    const students = parseRows([['Roll', 'Name'], ['271540', 'Student']], 'students', 'students.xlsx');
+    const { stats, flaggedRows } = processOmrData({
+      omrData: { rows: [{ Roll: '271540' }, { Roll: '271540' }, { Roll: '281213' }] },
+      sources: { students }
+    });
+    expect(stats.excluded).toBe(1);
+    expect(stats.reviewInResults).toBe(2);
+    expect(stats.flagged).toBe(3);
+    expect(flaggedRows.filter(row => row.excluded)).toHaveLength(1);
+    const noRoster = processOmrData({ omrData: { rows: [{ Roll: 'N/A' }] } });
+    expect(noRoster.stats.excluded).toBe(0);
+    expect(noRoster.stats.reviewInResults).toBe(1);
   });
 
   it('downloads an issue PDF with roll text rather than rasterized text', () => {

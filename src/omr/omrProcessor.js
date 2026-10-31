@@ -3,7 +3,7 @@ import { normalizeRoll, makeMap, sourceValue } from '../rollLogic.js';
 
 export function processOmrData({ omrData, answerKeyMap = {}, sources = {}, totalMcq = 0 }) {
   if (!omrData || !omrData.rows || !omrData.rows.length) {
-    return { results: [], issues: [], stats: { total: 0, valid: 0, highest: 0, average: 0 } };
+    return { results: [], issues: [], flaggedRows: [], stats: { total: 0, valid: 0, excluded: 0, flagged: 0, issueCount: 0, reviewInResults: 0, highest: 0, average: 0 } };
   }
 
   // Bridge student and web sheets if available in sources
@@ -225,13 +225,33 @@ export function processOmrData({ omrData, answerKeyMap = {}, sources = {}, total
     if (acc > easiest.acc) easiest = { q, acc };
   }
 
+  // Count affected source rows once, even when a row has several independent issues.
+  const retainedRows = new Set(results.map(row => row.rowNumber));
+  const groupedIssues = new Map();
+  for (const issue of issues) {
+    if (!groupedIssues.has(issue.rowNumber)) groupedIssues.set(issue.rowNumber, {
+      roll: issue.roll, rowNumber: issue.rowNumber,
+      excluded: !retainedRows.has(issue.rowNumber), reasons: []
+    });
+    groupedIssues.get(issue.rowNumber).reasons.push(issue);
+  }
+  const flaggedRows = [...groupedIssues.values()].map(row => ({
+    ...row,
+    type: [...new Set(row.reasons.map(issue => issue.type))].join(' + '),
+    detail: row.reasons.map(issue => issue.detail).join('; ')
+  }));
+
   return {
     results: sorted,
     issues,
+    flaggedRows,
     stats: {
       total: omrData.rows.length,
       valid: validResults.length,
       excluded: hasRoster ? omrData.rows.length - results.length : 0,
+      flagged: flaggedRows.length,
+      issueCount: issues.length,
+      reviewInResults: flaggedRows.filter(row => !row.excluded).length,
       invalid: issues.filter(i => i.type === 'Invalid Roll').length,
       highest,
       lowest,
