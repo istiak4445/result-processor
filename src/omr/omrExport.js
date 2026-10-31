@@ -12,9 +12,9 @@ export function buildOmrIssuesPdf({ issues = [], instructionImage }) {
   doc.text('OMR Flagged Rolls & Audit Issues', 32, 36);
   doc.setFontSize(10);
   doc.text(`${issues.length} flagged entries | Search by roll number using Find / Ctrl+F / Cmd+F`, 32, 54);
-  if (instructionImage) doc.addImage(instructionImage, 'JPEG', 32, 68, 778, 290);
+  if (instructionImage) doc.addImage(instructionImage, 'JPEG', 32, 68, 778, 325);
   autoTable(doc, {
-    startY: instructionImage ? 370 : 68,
+    startY: instructionImage ? 405 : 68,
     margin: { left: 32, right: 32, bottom: 32 },
     head: [['Type', 'Roll in Sheet', 'Row Number', 'Details / Reason']],
     body: issues.map(issue => [issue.type, String(issue.roll ?? ''), String(issue.rowNumber ?? ''), issue.detail]),
