@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { parseAnswerKey, parseOmrMatrix, autoDetectAnswerKey } from './omrParser.js';
 import { processOmrData } from './omrProcessor.js';
-import { exportOmrPdf, exportOmrXlsx } from './omrExport.js';
+import { exportOmrPdf, exportOmrXlsx, exportOmrIssuesPdf } from './omrExport.js';
 import { generateInfographicCanvas, downloadInfographicImage } from './omrInfograph.js';
 import { safeExportName } from '../exportName.js';
 
@@ -758,6 +758,13 @@ export default function OmrWorkspace({
           <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600', color: '#dc2626' }}>
             Flagged Rolls & Audit Issues ({processed.issues?.length || 0})
           </h4>
+          <button
+            onClick={() => exportOmrIssuesPdf({ issues: processed.issues, fileName: examTitle || fileName || 'OMR_Result' })}
+            disabled={!processed.issues?.length}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginBottom: '12px', padding: '9px 12px', border: 0, borderRadius: '6px', background: '#342d5b', color: 'white', cursor: 'pointer' }}
+          >
+            <Download size={15} /> Download Issues PDF (searchable)
+          </button>
           {processed.issues?.length === 0 ? (
             <div style={{ color: '#16a34a', fontSize: '13px' }}>No issues found! All roll numbers are valid.</div>
           ) : (

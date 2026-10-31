@@ -4,6 +4,34 @@ import autoTable from 'jspdf-autotable';
 import { safeExportName } from '../exportName.js';
 import { generateInfographicCanvas } from './omrInfograph.js';
 
+export function buildOmrIssuesPdf({ issues = [] }) {
+  if (!issues.length) return;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4', compress: true });
+  doc.setFontSize(16);
+  doc.text('OMR Flagged Rolls & Audit Issues', 32, 36);
+  doc.setFontSize(10);
+  doc.text(`${issues.length} issues | Search by roll number using Find / Ctrl+F / Cmd+F`, 32, 54);
+  autoTable(doc, {
+    startY: 68,
+    margin: { left: 32, right: 32, bottom: 32 },
+    head: [['Type', 'Roll in Sheet', 'Row Number', 'Details / Reason']],
+    body: issues.map(issue => [issue.type, String(issue.roll ?? ''), String(issue.rowNumber ?? ''), issue.detail]),
+    styles: { font: 'helvetica', fontSize: 9, cellPadding: 6, overflow: 'linebreak' },
+    headStyles: { fillColor: [52, 45, 91] },
+    columnStyles: { 0: { cellWidth: 120 }, 1: { cellWidth: 100 }, 2: { cellWidth: 70 } },
+    didDrawPage: () => {
+      doc.setFontSize(8);
+      doc.text(`Page ${doc.internal.getNumberOfPages()}`, 32, doc.internal.pageSize.getHeight() - 16);
+    }
+  });
+  return doc;
+}
+
+export function exportOmrIssuesPdf({ issues = [], fileName = 'OMR_Result' }) {
+  const doc = buildOmrIssuesPdf({ issues });
+  if (doc) doc.save(`${safeExportName(fileName)} - Flagged Issues.pdf`);
+}
+
 export function exportOmrPdf({
   results = [],
   totalMcq = 30,

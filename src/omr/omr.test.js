@@ -1,6 +1,34 @@
 import { describe, expect, it } from 'vitest';
 import { parseAnswerKey, parseOmrMatrix } from './omrParser.js';
 import { processOmrData } from './omrProcessor.js';
+import { parseRows } from '../rollLogic.js';
+import { buildOmrIssuesPdf } from './omrExport.js';
+
+describe('OMR flagged issues', () => {
+  it('flags each unmatched row once and counts excluded rows without mislabelling invalid rolls', () => {
+    const students = parseRows([['Roll', 'Name'], ['271540', 'Student']], 'students', 'students.xlsx');
+    const omrData = { rows: [
+      { Roll: '271540', Q1: 'A', _rowIndex: 6 },
+      { Roll: '281213', Q1: 'A', _rowIndex: 7 },
+      { Roll: '281213', Q1: 'B', _rowIndex: 8 },
+      { Roll: 'N/A', Q1: 'A', _rowIndex: 9 }
+    ] };
+    const { results, issues, stats } = processOmrData({ omrData, sources: { students }, answerKeyMap: { 1: 'A' } });
+    expect(results).toHaveLength(1);
+    const missing = issues.filter(issue => issue.type === 'Not in Students');
+    expect(missing.map(issue => issue.rowNumber)).toEqual([7, 8]);
+    expect(missing.every(issue => issue.detail.includes('Excluded from final result'))).toBe(true);
+    expect(issues.filter(issue => issue.type === 'Invalid Roll')).toHaveLength(1);
+    expect(stats.excluded).toBe(3);
+  });
+
+  it('downloads an issue PDF with roll text rather than rasterized text', () => {
+      const doc = buildOmrIssuesPdf({ issues: [
+        { type: 'Not in Students', roll: '00281213', rowNumber: 7, detail: 'No roster match (Excluded from final result)' }
+      ] });
+      expect(doc.internal.pages.flat().join('\n')).toContain('(00281213) Tj');
+  });
+});
 
 describe('OMR Answer Key Parser', () => {
   it('parses numbered answer key format with exam title prefix', () => {

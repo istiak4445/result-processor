@@ -79,7 +79,7 @@ export function processOmrData({ omrData, answerKeyMap = {}, sources = {}, total
         type: 'Not in Students',
         roll: norm.normalized,
         rowNumber: row._rowIndex || idx + 1,
-        detail: `Row ${row._rowIndex || idx + 1}: No match in Students${sources.web ? ' or valid Web Roll' : ''}`
+        detail: `Row ${row._rowIndex || idx + 1}: No match in Students${sources.web ? ' or valid Web Roll' : ''} (Excluded from final result)`
       });
     }
     
@@ -147,12 +147,6 @@ export function processOmrData({ omrData, answerKeyMap = {}, sources = {}, total
 
     // If roster is provided, flag and exclude rolls not in roster (exactly like main.jsx)
     if (hasRoster && !isEnrolled) {
-      issues.push({
-        type: 'Not in Students',
-        roll: norm.valid ? norm.normalized : rawRoll,
-        rowNumber: row._rowIndex || idx + 1,
-        detail: `Row ${row._rowIndex || idx + 1}: No match in Students${sources.web ? ' or valid Web Roll' : ''} (Excluded from final result)`
-      });
       return; // Exclude from final results list
     }
 
@@ -237,7 +231,7 @@ export function processOmrData({ omrData, answerKeyMap = {}, sources = {}, total
     stats: {
       total: omrData.rows.length,
       valid: validResults.length,
-      excluded: issues.filter(i => i.type === 'Not in Students').length,
+      excluded: hasRoster ? omrData.rows.length - results.length : 0,
       invalid: issues.filter(i => i.type === 'Invalid Roll').length,
       highest,
       lowest,
