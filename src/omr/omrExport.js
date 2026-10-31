@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { safeExportName } from '../exportName.js';
+import { automaticExportName, safeExportName } from '../exportName.js';
 import { generateInfographicCanvas } from './omrInfograph.js';
 import { renderIssueInstructions } from './issueInstructions.js';
 
@@ -33,7 +33,14 @@ export async function exportOmrIssuesPdf({ issues = [], fileName = 'OMR_Result' 
   if (!issues.length) return;
   const instructionImage = await renderIssueInstructions();
   const doc = buildOmrIssuesPdf({ issues, instructionImage });
-  if (doc) doc.save(`${safeExportName(fileName)} - Flagged Issues.pdf`);
+  const examName = automaticExportName(fileName)
+    .replace(/\s*-\s*Result$/i, '')
+    .replace(/\b(?:flagged|issues?|roll issues)\b/gi, '')
+    .replace(/\s+/g, ' ').replace(/[\s-]+$/g, '');
+  const shortName = examName.length > 60
+    ? examName.slice(0, 60).replace(/\s+\S*$/, '').replace(/[\s-]+$/g, '')
+    : examName;
+  if (doc) doc.save(`${safeExportName(shortName)} - যাদের রেজাল্ট আসেনি.pdf`);
 }
 
 export function exportOmrPdf({
