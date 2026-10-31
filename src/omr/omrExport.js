@@ -9,10 +9,10 @@ export function buildOmrIssuesPdf({ issues = [], instructionImage }) {
   if (!issues.length) return;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4', compress: true });
   doc.setFontSize(16);
-  doc.text('OMR Flagged Rolls & Audit Issues', 32, 36);
+  doc.text('Missing Results - Roll List', 32, 36);
   doc.setFontSize(10);
-  doc.text(`${issues.length} flagged entries | Search by roll number using Find / Ctrl+F / Cmd+F`, 32, 54);
-  if (instructionImage) doc.addImage(instructionImage, 'JPEG', 32, 68, 778, 325);
+  doc.text(`${issues.length} entries | Search by roll number using Find / Ctrl+F / Cmd+F`, 32, 54);
+  if (instructionImage) doc.addImage(instructionImage, 'PNG', 32, 68, 778, 325, undefined, 'FAST');
   autoTable(doc, {
     startY: instructionImage ? 405 : 68,
     margin: { left: 32, right: 32, bottom: 32 },

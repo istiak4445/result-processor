@@ -49,6 +49,16 @@ describe('OMR flagged issues', () => {
       ] });
       expect(doc.internal.pages.flat().join('\n')).toContain('(00281213) Tj');
   });
+
+  it('exports the complete admin-reviewed list without filtering review entries', () => {
+    const doc = buildOmrIssuesPdf({ issues: [
+      { type: 'Not in Students', roll: '00281213', rowNumber: 7, excluded: true, detail: 'No roster match' },
+      { type: 'Duplicate Roll', roll: '00271540', rowNumber: 8, excluded: false, detail: 'In result - review needed' }
+    ] });
+    const text = doc.internal.pages.flat().join('\n');
+    expect(text).toContain('(00281213) Tj');
+    expect(text).toContain('(00271540) Tj');
+  });
 });
 
 describe('OMR Answer Key Parser', () => {
