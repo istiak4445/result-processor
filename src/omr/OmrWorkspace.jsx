@@ -71,6 +71,7 @@ export default function OmrWorkspace({
   const [minScoreFilter, setMinScoreFilter] = useState(0);
   const [activeTab, setActiveTab] = useState('results'); // 'results' | 'issues'
   const [issueScope, setIssueScope] = useState('all');
+  const [issuePdfError, setIssuePdfError] = useState('');
   const [isExporting, setIsExporting] = useState(false);
 
   // Parse Answer Key
@@ -763,12 +764,18 @@ export default function OmrWorkspace({
             Flagged Entries ({processed.stats?.flagged || 0}) · Total Issues ({processed.stats?.issueCount || 0})
           </h4>
           <button
-            onClick={() => exportOmrIssuesPdf({ issues: (processed.flaggedRows || []).map(row => ({ ...row, detail: `${row.excluded ? 'Excluded from result' : 'In result - review needed'}: ${row.detail}` })), fileName: examTitle || fileName || 'OMR_Result' })}
-            disabled={!processed.issues?.length}
+            onClick={async () => {
+              setIsExporting(true); setIssuePdfError('');
+              try { await exportOmrIssuesPdf({ issues: (processed.flaggedRows || []).map(row => ({ ...row, detail: `${row.excluded ? 'Excluded from result' : 'In result - review needed'}: ${row.detail}` })), fileName: examTitle || fileName || 'OMR_Result' }); }
+              catch (error) { setIssuePdfError(error.message || 'PDF download failed. Please try again.'); }
+              finally { setIsExporting(false); }
+            }}
+            disabled={isExporting || !processed.issues?.length}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginBottom: '12px', padding: '9px 12px', border: 0, borderRadius: '6px', background: '#342d5b', color: 'white', cursor: 'pointer' }}
           >
             <Download size={15} /> Download Issues PDF (searchable)
           </button>
+          {issuePdfError && <p role="alert" style={{ color: '#b91c1c' }}>{issuePdfError}</p>}
           <p style={{ fontSize: '12px', color: '#64748b' }}>প্রতি source row একবার দেখানো হচ্ছে। একই রোল ফাইলে একাধিক row-তে থাকলে row number দিয়ে আলাদা করা হয়েছে। PDF-এ সব flagged entry থাকবে।</p>
           <label style={{ display: 'block', marginBottom: '12px' }}>দেখুন: <select value={issueScope} onChange={event => setIssueScope(event.target.value)}>
             <option value="all">সব সমস্যাযুক্ত এন্ট্রি ({processed.stats?.flagged || 0})</option>

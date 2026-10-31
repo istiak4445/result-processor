@@ -84,4 +84,11 @@ main.image-workspace-active{max-width:none;padding:0}
 .option-selected .mcq-option-state{color:#059669}
 .filename-editor-card input{font-weight:600;color:#1e1b4b}
 .filename-editor-card input:focus{border-color:#6366f1!important;box-shadow:0 0 0 2px rgba(99,102,241,0.2)!important}
+.mcq-duplicate-dialog{width:min(1050px,calc(100vw - 32px));max-height:85dvh;box-sizing:border-box;border:0;border-radius:16px;padding:22px;color:#292443;background:#fff;box-shadow:0 20px 80px #17102c55}
+.mcq-duplicate-dialog::backdrop{background:#17102ca6}
+.mcq-dialog-heading,.mcq-dialog-footer,.mcq-dialog-summary{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.mcq-dialog-heading h2{font-size:20px;margin:0}.mcq-dialog-heading button{font-size:25px;background:transparent;border:0;cursor:pointer}
+.mcq-duplicate-dialog>p{font-size:14px;line-height:1.7;color:#625975}.mcq-dialog-footer{position:sticky;bottom:-22px;padding:16px 0;background:#fff;border-top:1px solid #e6e0ef}
+.mcq-dialog-footer button,.mcq-dialog-summary button{padding:10px 16px;border:0;border-radius:8px;background:#6952ab;color:#fff;cursor:pointer;font-weight:600}
+.mcq-dialog-footer button:disabled{opacity:.45;cursor:not-allowed}.mcq-dialog-summary{margin-bottom:16px;padding:14px;background:#fff6e8;border:1px solid #f2d49e;border-radius:12px;font-size:13px}
 

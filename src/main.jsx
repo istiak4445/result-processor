@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import * as XLSX from 'xlsx';
 import {jsPDF} from 'jspdf';
@@ -488,11 +488,27 @@ function SourceCard({type,source,onFile,count=0}){const t=TYPES[type],multiple=t
 function Mapping({source,onChange,onRemove,index}){if(!source)return null;return <div className="mapping"><div className="mapping-head"><b>Detected columns · {source.fileName}</b>{onRemove&&<button type="button" onClick={()=>onRemove(index)}>Remove</button>}</div><div>{['roll','name','college','mark'].filter(f=>f==='roll'||(source.type==='web'&&['name','college'].includes(f))||(source.type==='mcq'&&f==='mark')||(source.type==='cq'&&['name','college','mark'].includes(f))||(source.type==='students'&&['name','college'].includes(f))).map(f=><label key={f}><span>{f}</span><select value={source.mapping[f]} onChange={e=>onChange(source.type,f,+e.target.value,index)}><option value={-1}>Not found</option>{source.headers.map((h,i)=><option key={i} value={i}>{h||`Column ${i+1}`}</option>)}</select></label>)}</div></div>}
 function McqDuplicateNotification({ duplicates = [], decisions = {}, onSelectEntry, onKeepHighestAll, onKeepFirstAll, onReset }){
   const [collapsed, setCollapsed] = useState(false);
+  const dialogRef = useRef(null);
+  const duplicateSignature = JSON.stringify(duplicates.map(dup => [dup.roll, dup.entries.map(entry => [entry.sourceFile, entry.rowNumber, entry.markRaw])]));
+  useEffect(() => {
+    if (duplicates.some(dup => !dup.isResolved) && !dialogRef.current?.open) {
+      setCollapsed(false);
+      dialogRef.current?.showModal();
+    }
+  }, [duplicateSignature]);
   if (!duplicates || !duplicates.length) return null;
   const unresolvedCount = duplicates.filter(d => !d.isResolved).length;
   const totalCount = duplicates.length;
 
   return (
+    <>
+    <div className="mcq-dialog-summary">
+      <span>{totalCount}টি MCQ রোল একাধিকবার আছে · {unresolvedCount}টির marks বেছে নেওয়া বাকি</span>
+      <button type="button" onClick={() => { setCollapsed(false); dialogRef.current?.showModal(); }}>Marks বেছে নাও / পরিবর্তন করো</button>
+    </div>
+    <dialog ref={dialogRef} className="mcq-duplicate-dialog" aria-labelledby="mcq-dialog-title">
+      <div className="mcq-dialog-heading"><h2 id="mcq-dialog-title">একই MCQ রোল একাধিকবার—কোন marks রাখবে?</h2><button type="button" aria-label="Close duplicate marks dialog" onClick={() => dialogRef.current?.close()}>×</button></div>
+      <p>প্রতিটি রোলের পাশে সব entry ও marks দেওয়া আছে। যেটা রাখতে চাও সেটায় ক্লিক করো—result ও rank সেটি দিয়েই আপডেট হবে।</p>
     <div className={`mcq-duplicate-notification ${unresolvedCount > 0 ? 'alert-unresolved' : 'alert-resolved'}`}>
       <div className="mcq-alert-header">
         <div className="mcq-alert-icon-wrap">
@@ -559,7 +575,7 @@ function McqDuplicateNotification({ duplicates = [], decisions = {}, onSelectEnt
                   <span className="mcq-choose-label">Choose which entry to keep in Final Result:</span>
                   <div className="mcq-options-grid">
                     {dup.entries.map((entry) => {
-                      const isSelected = dup.chosenIndex === entry.index;
+                      const isSelected = dup.isResolved && dup.chosenIndex === entry.index;
                       return (
                         <button
                           key={entry.index}
@@ -595,6 +611,9 @@ function McqDuplicateNotification({ duplicates = [], decisions = {}, onSelectEnt
         </div>
       )}
     </div>
+    <div className="mcq-dialog-footer"><span>{unresolvedCount ? `${unresolvedCount}টি রোলের marks বেছে নেওয়া বাকি` : 'সব রোলের marks বেছে নেওয়া হয়েছে ✓'}</span><button type="button" disabled={unresolvedCount > 0} onClick={() => dialogRef.current?.close()}>Done · ফলাফল দেখো</button></div>
+    </dialog>
+    </>
   );
 }
 function App(){
