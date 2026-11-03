@@ -1,3 +1,4 @@
+import {withCustomRoster} from '../customRoster.js';
 import React, { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import {
@@ -56,6 +57,7 @@ const SAMPLE_KEY = `28 offline
 30. B`;
 
 export default function OmrWorkspace({
+  customRosterInput,
   sources = {},
   onFile,
   savedSheets = [],
@@ -114,12 +116,12 @@ export default function OmrWorkspace({
   // Process data using bridged logic from main.jsx
   const processed = useMemo(() => {
     if (!omrData) return { results: [], issues: [], stats: {} };
-    return processOmrData({
+    return withCustomRoster(processOmrData,sources,{
       omrData,
       answerKeyMap: parsedKey.keyMap,
       sources,
       totalMcq: parsedKey.totalQuestions || omrData.questionColumns?.length || 30
-    });
+    },omrData);
   }, [omrData, parsedKey, sources]);
 
   // Filtered results
@@ -184,6 +186,7 @@ export default function OmrWorkspace({
 
   return (
     <div className="omr-workspace" style={{ padding: '20px 24px', maxWidth: '1440px', margin: '0 auto' }}>
+      {customRosterInput}
       {/* Top Banner */}
       <div style={{ background: '#1e293b', color: 'white', padding: '16px 20px', borderRadius: '10px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
         <div>
