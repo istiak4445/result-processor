@@ -1,4 +1,5 @@
-import {withCustomRoster} from '../customRoster.js';
+import {processReviewedOmr} from './omrReview.js';
+import OmrReviewPanel,{OmrCorrectionAction} from './OmrReviewPanel.jsx';
 import React, { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import {
@@ -19,7 +20,6 @@ import {
   BarChart3
 } from 'lucide-react';
 import { parseAnswerKey, parseOmrMatrix, autoDetectAnswerKey } from './omrParser.js';
-import { processOmrData } from './omrProcessor.js';
 import { exportOmrPdf, exportOmrXlsx, exportOmrIssuesPdf } from './omrExport.js';
 import { generateInfographicCanvas, downloadInfographicImage } from './omrInfograph.js';
 import { safeExportName } from '../exportName.js';
@@ -65,6 +65,11 @@ export default function OmrWorkspace({
   selectSaved
 }) {
   const [omrData, setOmrData] = useState(null);
+  const [corrections,setCorrections]=useState({});
+  const [duplicateDecisions,setDuplicateDecisions]=useState({});
+  const applyCorrection=(rowNumber,entry)=>{setCorrections(previous=>({...previous,[rowNumber]:entry}));setDuplicateDecisions({});};
+  const undoCorrection=rowNumber=>{setCorrections(previous=>{const next={...previous};delete next[rowNumber];return next;});setDuplicateDecisions({});};
+  const selectDuplicate=(roll,rowNumber)=>setDuplicateDecisions(previous=>({...previous,[roll]:rowNumber}));
   const [fileName, setFileName] = useState('');
   const [examTitle, setExamTitle] = useState('');
   const [keyText, setKeyText] = useState(SAMPLE_KEY);
@@ -90,6 +95,7 @@ export default function OmrWorkspace({
       const matrix = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '', raw: false });
       const parsed = parseOmrMatrix(matrix, file.name);
       setOmrData(parsed);
+      setCorrections({});setDuplicateDecisions({});
       if (parsed.examTitle) {
         setExamTitle(parsed.examTitle);
       }
@@ -116,13 +122,14 @@ export default function OmrWorkspace({
   // Process data using bridged logic from main.jsx
   const processed = useMemo(() => {
     if (!omrData) return { results: [], issues: [], stats: {} };
-    return withCustomRoster(processOmrData,sources,{
+    return processReviewedOmr({
+      corrections,decisions:duplicateDecisions,
       omrData,
       answerKeyMap: parsedKey.keyMap,
       sources,
       totalMcq: parsedKey.totalQuestions || omrData.questionColumns?.length || 30
-    },omrData);
-  }, [omrData, parsedKey, sources]);
+    });
+  }, [omrData, parsedKey, sources, corrections, duplicateDecisions]);
 
   // Filtered results
   const filteredResults = useMemo(() => {
@@ -186,7 +193,6 @@ export default function OmrWorkspace({
 
   return (
     <div className="omr-workspace" style={{ padding: '20px 24px', maxWidth: '1440px', margin: '0 auto' }}>
-      {customRosterInput}
       {/* Top Banner */}
       <div style={{ background: '#1e293b', color: 'white', padding: '16px 20px', borderRadius: '10px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px' }}>
         <div>
@@ -397,6 +403,7 @@ export default function OmrWorkspace({
               onChange={(e) => e.target.files[0] && onFile && onFile(e.target.files[0], 'students')}
             />
           </label>
+          {customRosterInput}
         </div>
       </div>
 
@@ -484,6 +491,7 @@ export default function OmrWorkspace({
         </div>
       )}
 
+      {processed.pendingDuplicates>0&&<p className="omr-review-export-warning">{processed.pendingDuplicates}টি duplicate রোলের সিদ্ধান্ত বাকি। <button type="button" onClick={()=>setActiveTab('issues')}>Flagged Entries-তে সিদ্ধান্ত নিন</button></p>}
       {/* Control Bar: Filters & Export Buttons */}
       {omrData && (
         <div style={{ background: 'white', padding: '14px 18px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
@@ -550,6 +558,7 @@ export default function OmrWorkspace({
           {/* Export Actions */}
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             <button
+              disabled={processed.pendingDuplicates>0}
               onClick={handleDownloadGraph}
               style={{
                 display: 'flex',
@@ -570,7 +579,9 @@ export default function OmrWorkspace({
             </button>
 
             <button
+              disabled={processed.pendingDuplicates>0}
               onClick={() => {
+                if(processed.pendingDuplicates)return;
                 exportOmrPdf({
                   results: filteredResults,
                   totalMcq,
@@ -598,7 +609,9 @@ export default function OmrWorkspace({
             </button>
 
             <button
+              disabled={processed.pendingDuplicates>0}
               onClick={() => {
+                if(processed.pendingDuplicates)return;
                 exportOmrXlsx({
                   results: filteredResults,
                   totalMcq,
@@ -763,6 +776,7 @@ export default function OmrWorkspace({
       {/* Flagged Issues View */}
       {omrData && activeTab === 'issues' && (
         <div style={{ background: 'white', borderRadius: '8px', border: '1px solid #e2e8f0', padding: '16px' }}>
+          <OmrReviewPanel groups={processed.reviewGroups} pending={processed.pendingDuplicates} log={processed.reviewLog} onSelect={selectDuplicate} onUndo={undoCorrection}/>
           <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600', color: '#dc2626' }}>
             Flagged Entries ({processed.stats?.flagged || 0}) · Total Issues ({processed.stats?.issueCount || 0})
           </h4>
@@ -788,7 +802,7 @@ export default function OmrWorkspace({
           {processed.issues?.length === 0 ? (
             <div style={{ color: '#16a34a', fontSize: '13px' }}>No issues found! All roll numbers are valid.</div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+            <div className="omr-review-table"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
               <thead>
                 <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0', textAlign: 'left' }}>
                   <th style={{ padding: '8px' }}>Type</th>
@@ -796,6 +810,7 @@ export default function OmrWorkspace({
                   <th style={{ padding: '8px' }}>Row Number</th>
                   <th style={{ padding: '8px' }}>Result Status</th>
                   <th style={{ padding: '8px' }}>Details / Reason</th>
+                  <th style={{ padding: '8px' }}>Manual action</th>
                 </tr>
               </thead>
               <tbody>
@@ -806,10 +821,11 @@ export default function OmrWorkspace({
                     <td style={{ padding: '8px' }}>{issue.rowNumber}</td>
                     <td style={{ padding: '8px' }}>{issue.excluded ? 'বাদ পড়েছে' : 'ফলাফলে আছে · যাচাই প্রয়োজন'}</td>
                     <td style={{ padding: '8px', color: '#64748b' }}>{issue.detail}</td>
+                    <td style={{ padding: '8px' }}><OmrCorrectionAction issue={issue} correction={corrections[issue.rowNumber]} onApply={applyCorrection} onUndo={undoCorrection}/></td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </div>
       )}
