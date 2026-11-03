@@ -1,4 +1,4 @@
-import {processReviewedOmr} from './omrReview.js';
+import {processReviewedOmr,makeOmrDecision} from './omrReview.js';
 import OmrReviewPanel,{OmrCorrectionAction} from './OmrReviewPanel.jsx';
 import React, { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
@@ -67,9 +67,9 @@ export default function OmrWorkspace({
   const [omrData, setOmrData] = useState(null);
   const [corrections,setCorrections]=useState({});
   const [duplicateDecisions,setDuplicateDecisions]=useState({});
-  const applyCorrection=(rowNumber,entry)=>{setCorrections(previous=>({...previous,[rowNumber]:entry}));setDuplicateDecisions({});};
-  const undoCorrection=rowNumber=>{setCorrections(previous=>{const next={...previous};delete next[rowNumber];return next;});setDuplicateDecisions({});};
-  const selectDuplicate=(roll,rowNumber)=>setDuplicateDecisions(previous=>({...previous,[roll]:rowNumber}));
+  const applyCorrection=(rowNumber,entry)=>{setCorrections(previous=>({...previous,[rowNumber]:entry}));};
+  const undoCorrection=rowNumber=>{setCorrections(previous=>{const next={...previous};delete next[rowNumber];return next;});};
+  const selectDuplicate=(roll,rowNumber)=>setDuplicateDecisions(previous=>({...previous,[roll]:makeOmrDecision(processed.reviewGroups,roll,rowNumber)}));
   const [fileName, setFileName] = useState('');
   const [examTitle, setExamTitle] = useState('');
   const [keyText, setKeyText] = useState(SAMPLE_KEY);
@@ -454,7 +454,7 @@ export default function OmrWorkspace({
             <div style={{ background: '#fffbeb', padding: '10px 14px', borderRadius: '8px', border: '1px solid #fde68a' }}>
               <div style={{ fontSize: '11.5px', color: '#92400e', fontWeight: '500' }}>সমস্যাযুক্ত এন্ট্রি (একবার করে গণনা)</div>
               <div style={{ fontSize: '20px', fontWeight: '800', color: '#b45309' }}>{processed.stats?.flagged || 0}</div>
-              <div style={{ fontSize: '11px', color: '#d97706' }}>বাদ {processed.stats?.excluded || 0} + ফলাফলে আছে {processed.stats?.reviewInResults || 0} = {processed.stats?.flagged || 0} এন্ট্রি</div>
+              <div style={{ fontSize: '11px', color: '#d97706' }}>বাদ {processed.stats?.flaggedExcluded || 0} + ফলাফলে আছে {processed.stats?.reviewInResults || 0} = {processed.stats?.flagged || 0} এন্ট্রি</div>
               <div style={{ fontSize: '11px', color: '#d97706' }}>এগুলোতে মোট {processed.stats?.issueCount || 0}টি সমস্যা; এক এন্ট্রিতে একাধিক হতে পারে</div>
               <button onClick={() => { setIssueScope('all'); setActiveTab('issues'); }}>সব সমস্যাযুক্ত এন্ট্রি দেখুন</button>
             </div>
@@ -796,11 +796,11 @@ export default function OmrWorkspace({
           <p style={{ fontSize: '12px', color: '#64748b' }}>প্রতি source row একবার দেখানো হচ্ছে। একই রোল ফাইলে একাধিক row-তে থাকলে row number দিয়ে আলাদা করা হয়েছে। Admin review শেষ করে PDF প্রকাশ করুন। PDF-এ এই পুরো তালিকা থাকবে।</p>
           <label style={{ display: 'block', marginBottom: '12px' }}>দেখুন: <select value={issueScope} onChange={event => setIssueScope(event.target.value)}>
             <option value="all">সব সমস্যাযুক্ত এন্ট্রি ({processed.stats?.flagged || 0})</option>
-            <option value="excluded">ফলাফল থেকে বাদ ({processed.stats?.excluded || 0})</option>
+            <option value="excluded">সমস্যার কারণে বাদ ({processed.stats?.flaggedExcluded || 0})</option>
             <option value="included">ফলাফলে আছে, যাচাই প্রয়োজন ({processed.stats?.reviewInResults || 0})</option>
           </select></label>
-          {processed.issues?.length === 0 ? (
-            <div style={{ color: '#16a34a', fontSize: '13px' }}>No issues found! All roll numbers are valid.</div>
+          {processed.flaggedRows?.length === 0 ? (
+            <div style={{ color: '#16a34a', fontSize: '13px' }}>সব সমস্যা মিটেছে। সংশোধিত entry final result-এ আছে।</div>
           ) : (
             <div className="omr-review-table"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
               <thead>
@@ -814,14 +814,14 @@ export default function OmrWorkspace({
                 </tr>
               </thead>
               <tbody>
-                {(processed.flaggedRows || []).filter(row => issueScope === 'all' || (issueScope === 'excluded' ? row.excluded : !row.excluded)).map((issue, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                {(processed.flaggedRows || []).filter(row => issueScope === 'all' || (issueScope === 'excluded' ? row.excluded : !row.excluded)).map(issue => (
+                  <tr key={issue.rowNumber} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '8px', fontWeight: '600', color: '#dc2626' }}>{issue.type}</td>
                     <td style={{ padding: '8px', fontFamily: 'monospace' }}>{issue.roll}</td>
                     <td style={{ padding: '8px' }}>{issue.rowNumber}</td>
-                    <td style={{ padding: '8px' }}>{issue.excluded ? 'বাদ পড়েছে' : 'ফলাফলে আছে · যাচাই প্রয়োজন'}</td>
+                    <td style={{ padding: '8px' }}>{issue.type==='Duplicate Roll'?'সিদ্ধান্ত বাকি · সাময়িক বাদ':issue.excluded?'বাদ পড়েছে':'ফলাফলে আছে · যাচাই প্রয়োজন'}</td>
                     <td style={{ padding: '8px', color: '#64748b' }}>{issue.detail}</td>
-                    <td style={{ padding: '8px' }}><OmrCorrectionAction issue={issue} correction={corrections[issue.rowNumber]} onApply={applyCorrection} onUndo={undoCorrection}/></td>
+                    <td style={{ padding: '8px' }}><OmrCorrectionAction key={issue.rowNumber} issue={issue} correction={corrections[issue.rowNumber]} onApply={applyCorrection} onUndo={undoCorrection}/></td>
                   </tr>
                 ))}
               </tbody>
