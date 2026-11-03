@@ -1,3 +1,4 @@
+import {createRosterNameLookup} from './rosterNameLookup.js';
 import {processReviewedOmr,makeOmrDecision} from './omrReview.js';
 import OmrReviewPanel,{OmrCorrectionAction} from './OmrReviewPanel.jsx';
 import React, { useState, useMemo } from 'react';
@@ -64,6 +65,7 @@ export default function OmrWorkspace({
   activeSavedId = '',
   selectSaved
 }) {
+  const lookupName=useMemo(()=>createRosterNameLookup(sources),[sources]);
   const [omrData, setOmrData] = useState(null);
   const [corrections,setCorrections]=useState({});
   const [duplicateDecisions,setDuplicateDecisions]=useState({});
@@ -821,7 +823,7 @@ export default function OmrWorkspace({
                     <td style={{ padding: '8px' }}>{issue.rowNumber}</td>
                     <td style={{ padding: '8px' }}>{issue.type==='Duplicate Roll'?'সিদ্ধান্ত বাকি · সাময়িক বাদ':issue.excluded?'বাদ পড়েছে':'ফলাফলে আছে · যাচাই প্রয়োজন'}</td>
                     <td style={{ padding: '8px', color: '#64748b' }}>{issue.detail}</td>
-                    <td style={{ padding: '8px' }}><OmrCorrectionAction key={issue.rowNumber} issue={issue} correction={corrections[issue.rowNumber]} onApply={applyCorrection} onUndo={undoCorrection}/></td>
+                    <td style={{ padding: '8px' }}><OmrCorrectionAction lookupName={lookupName} key={issue.rowNumber} issue={issue} correction={corrections[issue.rowNumber]} onApply={applyCorrection} onUndo={undoCorrection}/></td>
                   </tr>
                 ))}
               </tbody>

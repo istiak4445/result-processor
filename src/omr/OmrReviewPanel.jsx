@@ -2,17 +2,20 @@ import React, {useState} from 'react';
 import {validateOmrCorrection} from './omrReview.js';
 import './omr-review.css';
 const groupId = roll => 'omr-duplicate-' + encodeURIComponent(roll);
-export function OmrCorrectionAction({issue, correction, onApply}) {
+export function OmrCorrectionAction({issue, correction, onApply, lookupName}) {
  const [open, setOpen] = useState(false), [roll, setRoll] = useState(''), [name, setName] = useState(''), [error, setError] = useState('');
+ const matchedName = lookupName?.(roll);
+ const effectiveName = matchedName?.name || name;
  const duplicate = issue.type === 'Duplicate Roll';
  const edit = () => {setRoll(correction?.roll || issue.roll || ''); setName(correction?.name || ''); setError(''); setOpen(true);};
  return <div className="omr-correction">
   {duplicate && <a className="omr-choose-link" href={'#' + groupId(issue.roll)}>কোন entry রাখবেন বেছে নিন ↑</a>}
   {!open ? <button type="button" onClick={edit}>{duplicate ? 'আলাদা শিক্ষার্থী? রোল ঠিক করুন' : 'রোল / নাম ঠিক করুন'}</button> :
-   <form onSubmit={event => {event.preventDefault(); try {onApply(issue.rowNumber, validateOmrCorrection(roll, name)); setOpen(false); setError('');} catch (error) {setError(error.message);}}}>
+   <form onSubmit={event => {event.preventDefault(); try {onApply(issue.rowNumber, validateOmrCorrection(roll, effectiveName)); setOpen(false); setError('');} catch (error) {setError(error.message);}}}>
     <b>Source row {issue.rowNumber} ঠিক করছেন</b>
-    <label>সঠিক রোল<input aria-label={'Correct roll for row ' + issue.rowNumber} value={roll} onChange={event => setRoll(event.target.value)} inputMode="numeric"/></label>
-    <label>শিক্ষার্থীর নাম<input aria-label={'Student name for row ' + issue.rowNumber} value={name} onChange={event => setName(event.target.value)}/></label>
+    <label>সঠিক রোল<input aria-label={'Correct roll for row ' + issue.rowNumber} value={roll} onChange={event => {setRoll(event.target.value);setName('');setError('');}} inputMode="numeric"/></label>
+    <label>শিক্ষার্থীর নাম<input aria-label={'Student name for row ' + issue.rowNumber} value={effectiveName} readOnly={!!matchedName} onChange={event => {setName(event.target.value);setError('');}}/></label>
+    <small className={matchedName?'omr-name-match':'omr-name-unmatched'} role="status">{matchedName?'✓ '+matchedName.source+' থেকে নাম পাওয়া গেছে':roll?'এই রোলে কোনো নাম পাওয়া যায়নি। হাতে নাম লিখুন।':'রোল লিখলে সংযুক্ত sheet থেকে নাম আসবে।'}</small>
     <small>এই row-এর marks ও answers অপরিবর্তিত থাকবে।</small>
     <div><button type="submit">Save correction</button><button type="button" onClick={() => setOpen(false)}>Cancel</button></div>
     {error && <p role="alert">{error}</p>}
