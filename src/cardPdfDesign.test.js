@@ -1,0 +1,8 @@
+import {describe,it,expect} from 'vitest';import {cardPdfLayout,DEFAULT_CARD_FONT_SIZE,DEFAULT_CARD_FOOTER} from './cardPdfDesign.js';
+describe('preview-style PDF layout',()=>{
+ it('uses the requested 15-point default and exact Bengali address',()=>{expect(DEFAULT_CARD_FONT_SIZE).toBe(15);expect(DEFAULT_CARD_FOOTER).toBe('মতি টাওয়ার (৫ম তলা),চকবাজার 01332552536');expect(cardPdfLayout({width:1080,height:1080},12).fontSize).toBe(15);});
+ it('keeps table rows above the footer at all supported page sizes',()=>{for(const height of [1080,1350,1920])for(const rows of [1,5,12,24]){const layout=cardPdfLayout({width:1080,height},rows,{fontSize:15},{footer:DEFAULT_CARD_FOOTER});expect(layout.tableTop+layout.headHeight+layout.rowHeight*rows).toBeLessThan(layout.footerTop);}});
+ it('preserves user-selected font size and table width',()=>{const small=cardPdfLayout({width:1080,height:1080},12,{fontSize:12,tableWidth:80});const large=cardPdfLayout({width:1080,height:1080},12,{fontSize:20,tableWidth:96});expect(small.fontSize).toBe(12);expect(large.fontSize).toBe(20);expect(large.tableWidth).toBeGreaterThan(small.tableWidth);});
+ it('reserves extra footer space for additional contact details',()=>{const size={width:1080,height:1080};expect(cardPdfLayout(size,12,{}, {contact:'Additional contact'}).rowHeight).toBeLessThan(cardPdfLayout(size,12).rowHeight);});
+ it('asks to reduce page density instead of overlapping unreadable rows',()=>{expect(()=>cardPdfLayout({width:1080,height:1080},100)).toThrow(/Too many rows/);});
+});

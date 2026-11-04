@@ -1,3 +1,4 @@
+import {DEFAULT_CARD_FONT_SIZE,DEFAULT_CARD_FOOTER} from './cardPdfDesign.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import * as htmlToImage from 'html-to-image';
@@ -77,7 +78,7 @@ const defaultBrand = {
   exam: 'Weekly Exam Result',
   date: new Date().toISOString().slice(0, 10),
   institute: 'ChemShifu',
-  footer: 'ChemShifu | Chemistry A to Z',
+  footer: DEFAULT_CARD_FOOTER,
   contact: '',
   web: '',
   note: '',
@@ -91,7 +92,7 @@ const defaultBrandOptions = {
 
 const defaultStyle = {
   rowsPerImage: 12,
-  fontSize: 25,
+  fontSize: DEFAULT_CARD_FONT_SIZE,
   padding: 18,
   tableWidth: 96,
   headerColor: '#f5c542',
@@ -165,6 +166,7 @@ export default function ImageMaker({ sourceData, exportBaseName='Exam Result', c
   const [style, setStyle] = useState(defaultStyle);
   const [currentPage, setCurrentPage] = useState(0);
   const [exporting, setExporting] = useState(false);
+  const [pdfStatus,setPdfStatus]=useState('');
   const [fileName, setFileName] = useState('Sample data loaded');
   const [previewWidth, setPreviewWidth] = useState(1080);
   const cardRefs = useRef([]);
@@ -306,7 +308,8 @@ export default function ImageMaker({ sourceData, exportBaseName='Exam Result', c
   const exportSearchablePdf = async () => {
     setExporting(true);
     try {
-      await downloadCardPdf(cardRefs.current.slice(0, pages.length), exportSize, exportBaseName, { brand });
+      const result=await downloadCardPdf(cardRefs.current.slice(0, pages.length), exportSize, exportBaseName, {brand,style,brandOptions,accent,columnFontSizes:[...(style.showSerial?[null]:[]),...visibleColumns.map(column=>columnFontSizes[column.index])]});
+      setPdfStatus(result.pages+' pages · '+(result.bytes/1024).toFixed(1)+' KB · searchable PDF');
     } catch (error) {
       window.alert(error.message || 'Could not download PDF. Please try again.');
     } finally {
@@ -396,7 +399,7 @@ export default function ImageMaker({ sourceData, exportBaseName='Exam Result', c
           <EditorSection title="Style" icon={<Palette size={17} />}>
             <div className="grid grid-cols-2 gap-3">
               <NumberInput label="Rows per image" min="1" max="30" value={style.rowsPerImage} onChange={(rowsPerImage) => setStyle({ ...style, rowsPerImage })} />
-              <NumberInput label="Font size" min="16" max="40" value={style.fontSize} onChange={(fontSize) => setStyle({ ...style, fontSize })} />
+              <NumberInput label="Font size" min="10" max="40" value={style.fontSize} onChange={(fontSize) => setStyle({ ...style, fontSize })} />
               <NumberInput label="Cell padding" min="8" max="30" value={style.padding} onChange={(padding) => setStyle({ ...style, padding })} />
               <NumberInput label="Table width %" min="70" max="100" value={style.tableWidth} onChange={(tableWidth) => setStyle({ ...style, tableWidth })} />
               <NumberInput label="Radius" min="12" max="56" value={style.borderRadius} onChange={(borderRadius) => setStyle({ ...style, borderRadius })} />
@@ -474,7 +477,8 @@ export default function ImageMaker({ sourceData, exportBaseName='Exam Result', c
             <button className="primary-button w-full" onClick={exportSearchablePdf} disabled={exporting || !rows.length}>
               <Download size={17} /> Export Final Searchable PDF
             </button>
-            <p className="text-xs text-slate-400">Clean lightweight vector PDF with embedded Kalpurush font and searchable Bangla/English text. The PDF layout is optimized separately from image exports.</p>
+            <p className="text-xs text-slate-400">Preview-style PDF: selected background and colors, searchable text, and one shared compressed background across pages.</p>
+            {pdfStatus&&<p role="status" className="text-xs text-emerald-300">{pdfStatus}</p>}
             <TextInput label="Export filename · directly editable" value={customExportName !== '' ? customExportName : exportBaseName} onChange={onExportNameChange} placeholder={exportBaseName}/>
             <p className="text-xs text-slate-400">Preview: {exportBaseName}</p>
             <button className="primary-button w-full" onClick={downloadCurrent} disabled={exporting}>
@@ -602,7 +606,7 @@ const ResultCard = React.forwardRef(function ResultCard(
   const rowHeight = rows.length
     ? Math.max(36, Math.floor((tableAreaHeight - tableHeadHeight) / rows.length))
     : 58;
-  const effectiveFontSize = Math.min(styleConfig.fontSize + 2, Math.max(18, Math.floor(rowHeight * 0.43)));
+  const effectiveFontSize = Math.min(styleConfig.fontSize, Math.max(10, Math.floor(rowHeight * 0.43)));
   const columnMeta = visibleColumns.map((col) => {
     const kind = getColumnKind(headers[col.index]);
     return { ...col, kind, weight: getColumnWeight(kind) };
@@ -722,7 +726,7 @@ const ResultCard = React.forwardRef(function ResultCard(
                       const cellValue = row[col.index];
                       const isNumberLike = col.kind === 'compact' || isNumericValue(cellValue);
                       const configuredFontSize = columnFontSizes[col.index];
-                      const bodyFontSize = configuredFontSize || (isName ? Math.min(effectiveFontSize + 4, Math.floor(rowHeight * 0.56)) : effectiveFontSize);
+                      const bodyFontSize = configuredFontSize || effectiveFontSize;
                       return (
                         <td
                           key={col.index}
