@@ -1,3 +1,4 @@
+import {parseHeadingRows} from './headerMapping.js';
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import * as XLSX from 'xlsx';
@@ -64,23 +65,7 @@ function detectColumn(headers, field, type){
   return -1;
 }
 export function parseRows(matrix, type, fileName){
-  const headerIndex=detectHeader(matrix); const headers=(matrix[headerIndex]||[]).map(v=>String(v??'').trim());
-  const entries=matrix.slice(headerIndex+1).map((row,i)=>({row,rowNumber:headerIndex+i+2})).filter(({row})=>row.some(v=>String(v??'').trim()!==''));
-  const rows=entries.map(x=>x.row),rowNumbers=entries.map(x=>x.rowNumber);
-  const mapping={roll:detectColumn(headers,'roll',type),name:detectColumn(headers,'name',type),college:detectColumn(headers,'college',type),mark:detectColumn(headers,'mark',type)};
-  if(rows.length>0){
-    const sample=rows.slice(0,10);
-    const colCount=Math.max(...sample.map(r=>r.length),0);
-    for(let col=0;col<colCount;col++){
-      const vals=sample.map(r=>String(r[col]??'').trim()).filter(Boolean);
-      if(!vals.length)continue;
-      if(mapping.roll<0&&vals.every(v=>/^\d{6,8}$/.test(v.replace(/-/g,'')))) mapping.roll=col;
-      else if(mapping.mark<0&&vals.every(v=>/^\d+(\.\d+)?$/.test(v)&&Number(v)<=100)) mapping.mark=col;
-      else if(mapping.college<0&&vals.some(v=>/college|school|institution|madrasha|university/i.test(v))) mapping.college=col;
-      else if(mapping.name<0&&vals.some(v=>/^[a-zA-Z\s.]+$/.test(v)&&v.split(/\s+/).length>=2&&!/college|school|institution/i.test(v))) mapping.name=col;
-    }
-  }
-  return {type,fileName,headerIndex,headers,rows,rowNumbers,mapping};
+  return parseHeadingRows(matrix,type,fileName);
 }
 export function combineCqSources(files=[]){
   const headers=['Roll','Student Name','College','Marks'];
@@ -487,7 +472,7 @@ function SourceCard({type,source,onFile,count=0}){const t=TYPES[type],multiple=t
   <span className={`source-icon ${t.color}`}><FileSpreadsheet size={21}/></span><span className="grow"><b>{t.label}</b><small>{multiple&&count?`${count} file${count===1?'':'s'} loaded · add more`:source?source.fileName:t.hint}</small></span>
   {source?<CheckCircle2 className="ok" size={20}/>:<Upload size={18}/>}<em>{['mcq','cq'].includes(type)?'Optional · Read-only':'Read-only'}</em>
  </label>}
-function Mapping({source,onChange,onRemove,index}){if(!source)return null;return <div className="mapping"><div className="mapping-head"><b>Detected columns · {source.fileName}</b>{onRemove&&<button type="button" onClick={()=>onRemove(index)}>Remove</button>}</div><div>{['roll','name','college','mark'].filter(f=>f==='roll'||(source.type==='web'&&['name','college'].includes(f))||(source.type==='mcq'&&f==='mark')||(source.type==='cq'&&['name','college','mark'].includes(f))||(source.type==='students'&&['name','college'].includes(f))).map(f=><label key={f}><span>{f}</span><select value={source.mapping[f]} onChange={e=>onChange(source.type,f,+e.target.value,index)}><option value={-1}>Not found</option>{source.headers.map((h,i)=><option key={i} value={i}>{h||`Column ${i+1}`}</option>)}</select></label>)}</div></div>}
+function Mapping({source,onChange,onRemove,index}){if(!source)return null;return <div className="mapping"><div className="mapping-head"><b>Detected columns · {source.fileName}</b>{onRemove&&<button type="button" onClick={()=>onRemove(index)}>Remove</button>}</div>{source.headingMissing&&<p role="status" style={{color:'#945c0e',fontSize:12}}>এই ফাইলে heading পাওয়া যায়নি। সব data row রাখা হয়েছে—নিচে সঠিক columns বেছে নিন।</p>}{['mcq','cq'].includes(source.type)&&source.mapping.mark<0&&<p role="alert" style={{color:'#b63333',fontSize:12}}>Marks column পাওয়া যায়নি। Mark dropdown থেকে সঠিক column বেছে নিন। Serial থেকে marks নেওয়া হবে না।</p>}<div>{['roll','name','college','mark'].filter(f=>f==='roll'||(source.type==='web'&&['name','college'].includes(f))||(source.type==='mcq'&&f==='mark')||(source.type==='cq'&&['name','college','mark'].includes(f))||(source.type==='students'&&['name','college'].includes(f))).map(f=><label key={f}><span>{f}</span><select value={source.mapping[f]} onChange={e=>onChange(source.type,f,+e.target.value,index)}><option value={-1}>Not found</option>{source.headers.map((h,i)=><option key={i} value={i}>{h||`Column ${i+1}`}</option>)}</select></label>)}</div></div>}
 function McqDuplicateNotification({ duplicates = [], decisions = {}, onSelectEntry, onKeepHighestAll, onKeepFirstAll, onReset }){
   const [collapsed, setCollapsed] = useState(false);
   const dialogRef = useRef(null);
